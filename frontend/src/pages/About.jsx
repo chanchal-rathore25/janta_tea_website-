@@ -18,7 +18,7 @@ export default function About() {
 
       {/* Hero Banner */}
       <section className="relative h-[50vh] min-h-[380px] flex items-center justify-center bg-tea-dark">
-        <img src="/images/about/hero-banner.jpg" alt="Janta Tea gardens" className="absolute inset-0 w-full h-full object-cover opacity-40" />
+        <img src="/images/products/greentea.jpg" alt="Janta Tea gardens" className="absolute inset-0 w-full h-full object-cover opacity-40" />
         <div className="relative z-10 text-center px-5">
           <span className="section-eyebrow text-tea-gold">Since 1999</span>
           <h1 className="mt-3 text-4xl sm:text-5xl font-bold text-tea-cream">Our Story</h1>
