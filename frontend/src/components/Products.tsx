@@ -42,9 +42,9 @@ import { Link } from "@tanstack/react-router";
 import { ProductCard } from "@/components/ProductCard";
 import { products } from "@/data/products";
 
-
 export function Products() {
   const featuredProducts = products.slice(0, 3);
+
   return (
     <section
       id="products"

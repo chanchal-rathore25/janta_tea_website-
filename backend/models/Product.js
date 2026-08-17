@@ -1,16 +1,57 @@
-import mongoose from 'mongoose'
+import mongoose from "mongoose";
 
 const productSchema = new mongoose.Schema(
   {
-    name: { type: String, required: true },
-    slug: { type: String, required: true, unique: true },
-    tagline: { type: String },
-    description: { type: String, required: true },
-    image: { type: String, required: true }, // Cloudinary URL
-    category: { type: String, required: true },
-    isActive: { type: Boolean, default: true },
-  },
-  { timestamps: true }
-)
+    name: {
+      type: String,
+      required: true,
+      trim: true,
+    },
 
-export default mongoose.model('Product', productSchema)
+    slug: {
+      type: String,
+      required: true,
+      unique: true,
+      trim: true,
+    },
+
+    tagline: {
+      type: String,
+      trim: true,
+    },
+
+    description: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    // 🔐 Server-side authoritative price
+    price: {
+      type: Number,
+      required: true,
+      min: 0,
+    },
+
+    image: {
+      type: String,
+      required: true,
+    },
+
+    category: {
+      type: String,
+      required: true,
+      trim: true,
+    },
+
+    isActive: {
+      type: Boolean,
+      default: true,
+    },
+  },
+  {
+    timestamps: true,
+  }
+);
+
+export default mongoose.model("Product", productSchema);
