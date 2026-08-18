@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useMemo, useState, type ReactNode
 
 export type CartItem = {
   name: string;
-  slug?: string;
+  slug: string;
   price: string;
   priceValue: number;
   image: string;

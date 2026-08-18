@@ -5,15 +5,12 @@ import { toast } from "sonner";
 import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { useCart } from "@/lib/cart";
+import { createOrder } from "@/lib/orders.functions";
 
 const title = "Checkout — Janta Tea Company, Indore";
 
 const description =
   "Complete your order from Janta Tea Company. Secure payment and delivery across Indore.";
-
-const API_URL =
-  import.meta.env["VITE_API_URL"] ||
-  "http://localhost:5000";
 
 type PaymentMethod = "online" | "cod";
 
@@ -50,8 +47,7 @@ export const Route = createFileRoute("/chectout")({
 function Checkout() {
   const { items, total, clear } = useCart();
 
-  const [isSubmitting, setIsSubmitting] =
-    useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [paymentMethod, setPaymentMethod] =
     useState<PaymentMethod>("online");
@@ -61,8 +57,7 @@ function Checkout() {
       ? 0
       : 60;
 
-  const grandTotal =
-    total + delivery;
+  const grandTotal = total + delivery;
 
   // =====================================================
   // HANDLE CHECKOUT
@@ -85,8 +80,7 @@ function Checkout() {
       // GET FORM DATA
       // -------------------------------------------------
 
-      const formData =
-        new FormData(e.currentTarget);
+      const formData = new FormData(e.currentTarget);
 
       const customer = {
         name: String(
@@ -114,11 +108,7 @@ function Checkout() {
       // VALIDATE PHONE
       // -------------------------------------------------
 
-      if (
-        !/^[6-9]\d{9}$/.test(
-          customer.phone
-        )
-      ) {
+      if (!/^[6-9]\d{9}$/.test(customer.phone)) {
         toast.error(
           "Please enter a valid 10-digit mobile number."
         );
@@ -131,11 +121,7 @@ function Checkout() {
       // VALIDATE PINCODE
       // -------------------------------------------------
 
-      if (
-        !/^\d{6}$/.test(
-          customer.pincode
-        )
-      ) {
+      if (!/^\d{6}$/.test(customer.pincode)) {
         toast.error(
           "Please enter a valid 6-digit pincode."
         );
@@ -145,275 +131,109 @@ function Checkout() {
       }
 
       // -------------------------------------------------
-      // PREPARE ITEMS
+      // VALIDATE PRODUCT SLUGS
       // -------------------------------------------------
 
-      const orderItems = items.map(
-        (item) => ({
-          productId: item.name,
-          name: item.name,
-          quantity: item.qty,
-
-          /*
-            TEMPORARY
-
-            Your current cart contains priceValue.
-
-            Later we will remove price from the
-            frontend request and backend will fetch
-            the actual product price from MongoDB.
-          */
-
-          price: item.priceValue,
-
-          image: item.image,
-        })
+      const invalidProduct = items.find(
+        (item) => !item.slug
       );
 
-      // =================================================
-      // STEP 1
-      // CREATE OUR DATABASE ORDER
-      // =================================================
-
-      const orderResponse =
-        await fetch(
-          `${API_URL}/api/orders`,
-          {
-            method: "POST",
-
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
-
-            body: JSON.stringify({
-              customer,
-              items: orderItems,
-              paymentMethod,
-            }),
-          }
+      if (invalidProduct) {
+        toast.error(
+          `Product information is missing for ${invalidProduct.name}. Please remove it and add it again.`
         );
 
-      const orderData =
-        await orderResponse.json();
-
-      if (!orderResponse.ok) {
-        throw new Error(
-          orderData.message ||
-            "Unable to create order."
-        );
+        setIsSubmitting(false);
+        return;
       }
 
-      const localOrderId =
-        orderData.order.id;
+      // =================================================
+      // CREATE SUPABASE ORDER
+      // =================================================
+      //
+      // IMPORTANT:
+      // We DO NOT send priceValue.
+      //
+      // Supabase server function will fetch the
+      // authoritative price from the products table.
+      //
+      // =================================================
+
+      const order = await createOrder({
+        data: {
+          full_name: customer.name,
+
+          phone: customer.phone,
+
+          address: customer.address,
+
+          city: customer.city,
+
+          pincode: customer.pincode,
+
+          payment_method:
+            paymentMethod === "cod"
+              ? "cod"
+              : "upi",
+
+          items: items.map((item) => ({
+            slug: item.slug,
+            name: item.name,
+            qty: item.qty,
+          })),
+        },
+      });
 
       // =================================================
       // COD
       // =================================================
 
-      if (
-        paymentMethod === "cod"
-      ) {
+      if (paymentMethod === "cod") {
+        clear();
+
         toast.success(
           "Your order has been placed successfully!"
         );
-
-        clear();
-
-        setIsSubmitting(false);
 
         return;
       }
 
       // =================================================
-      // STEP 2
-      // CREATE RAZORPAY ORDER
+      // ONLINE PAYMENT
+      // =================================================
+      //
+      // Razorpay will be connected here in the next step
+      // using a Supabase Edge Function.
+      //
       // =================================================
 
-      const razorpayOrderResponse =
-        await fetch(
-          `${API_URL}/api/payment/create-order`,
-          {
-            method: "POST",
+      toast.success(
+        `Order created successfully. Order total: ₹${order.total}`
+      );
 
-            headers: {
-              "Content-Type":
-                "application/json",
-            },
+      console.log(
+        "Supabase order created:",
+        order
+      );
 
-            body: JSON.stringify({
-              orderId:
-                localOrderId,
-            }),
-          }
-        );
-
-      const razorpayOrderData =
-        await razorpayOrderResponse.json();
-
-      if (
-        !razorpayOrderResponse.ok
-      ) {
-        throw new Error(
-          razorpayOrderData.message ||
-            "Unable to start payment."
-        );
-      }
-
-      // =================================================
-      // CHECK RAZORPAY SCRIPT
-      // =================================================
-
-      if (!window.Razorpay) {
-        throw new Error(
-          "Razorpay Checkout could not be loaded. Please refresh the page."
-        );
-      }
-
-      // =================================================
-      // STEP 3
-      // RAZORPAY OPTIONS
-      // =================================================
-
-      const options: RazorpayOptions = {
-        key:
-          razorpayOrderData.keyId,
-
-        amount:
-          razorpayOrderData.order.amount,
-
-        currency:
-          razorpayOrderData.order.currency,
-
-        name:
-          "Janta Tea Company",
-
-        description:
-          "Tea order from Janta Tea Company",
-
-        order_id:
-          razorpayOrderData.order.id,
-
-        prefill: {
-          name:
-            customer.name,
-
-          contact:
-            customer.phone,
-        },
-
-        notes: {
-          orderId:
-            localOrderId,
-        },
-
-        theme: {
-          color:
-            "#6B3E26",
-        },
-
-        // =================================================
-        // PAYMENT SUCCESS
-        // =================================================
-
-        handler: async (
-          response
-        ) => {
-          try {
-            setIsSubmitting(true);
-
-            // ---------------------------------------------
-            // VERIFY PAYMENT
-            // ---------------------------------------------
-
-            const verifyResponse =
-              await fetch(
-                `${API_URL}/api/payment/verify`,
-                {
-                  method: "POST",
-
-                  headers: {
-                    "Content-Type":
-                      "application/json",
-                  },
-
-                  body: JSON.stringify({
-                    orderId:
-                      localOrderId,
-
-                    razorpayPaymentId:
-                      response.razorpay_payment_id,
-
-                    razorpaySignature:
-                      response.razorpay_signature,
-                  }),
-                }
-              );
-
-            const verifyData =
-              await verifyResponse.json();
-
-            if (
-              !verifyResponse.ok
-            ) {
-              throw new Error(
-                verifyData.message ||
-                  "Payment verification failed."
-              );
-            }
-
-            // ---------------------------------------------
-            // PAYMENT SUCCESS
-            // ---------------------------------------------
-
-            clear();
-
-            toast.success(
-              "Payment successful! Your order has been confirmed."
-            );
-
-          } catch (error) {
-            console.error(
-              "Payment verification error:",
-              error
-            );
-
-            toast.error(
-              error instanceof Error
-                ? error.message
-                : "Payment verification failed."
-            );
-
-          } finally {
-            setIsSubmitting(false);
-          }
-        },
-
-        // =================================================
-        // PAYMENT WINDOW CLOSED
-        // =================================================
-
-        modal: {
-          ondismiss: () => {
-            setIsSubmitting(false);
-
-            toast.info(
-              "Payment was cancelled."
-            );
-          },
-        },
-      };
-
-      // =================================================
-      // OPEN RAZORPAY
-      // =================================================
-
-      const razorpay =
-        new window.Razorpay(
-          options
-        );
-
-      razorpay.open();
+      /*
+       * TEMPORARY:
+       *
+       * Online Razorpay payment is intentionally not
+       * started yet.
+       *
+       * Next step:
+       *
+       * Checkout
+       *    ↓
+       * Supabase Edge Function
+       *    ↓
+       * Razorpay order
+       *    ↓
+       * Razorpay Checkout
+       *    ↓
+       * Payment verification
+       */
 
     } catch (error) {
       console.error(
@@ -427,6 +247,7 @@ function Checkout() {
           : "Something went wrong. Please try again."
       );
 
+    } finally {
       setIsSubmitting(false);
     }
   };
@@ -506,10 +327,6 @@ function Checkout() {
           </div>
 
         ) : (
-
-          /* =================================================
-             CHECKOUT
-          ================================================= */
 
           <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_400px]">
 
@@ -636,13 +453,10 @@ function Checkout() {
                     name="payment"
                     value="online"
                     checked={
-                      paymentMethod ===
-                      "online"
+                      paymentMethod === "online"
                     }
                     onChange={() =>
-                      setPaymentMethod(
-                        "online"
-                      )
+                      setPaymentMethod("online")
                     }
                     className="mt-1 accent-terracotta"
                   />
@@ -681,13 +495,10 @@ function Checkout() {
                     name="payment"
                     value="cod"
                     checked={
-                      paymentMethod ===
-                      "cod"
+                      paymentMethod === "cod"
                     }
                     onChange={() =>
-                      setPaymentMethod(
-                        "cod"
-                      )
+                      setPaymentMethod("cod")
                     }
                     className="mt-1 accent-terracotta"
                   />
@@ -717,27 +528,20 @@ function Checkout() {
 
                 <button
                   type="submit"
-                  disabled={
-                    isSubmitting
-                  }
+                  disabled={isSubmitting}
                   className="inline-flex flex-1 items-center justify-center rounded-full bg-chai px-8 py-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-cream transition-all duration-300 hover:bg-terracotta disabled:cursor-not-allowed disabled:opacity-60"
                 >
                   {isSubmitting
                     ? "Processing..."
-                    : paymentMethod ===
-                        "cod"
+                    : paymentMethod === "cod"
                       ? `Place order · ₹${grandTotal}`
                       : `Continue to payment · ₹${grandTotal}`}
                 </button>
 
                 <button
                   type="button"
-                  onClick={
-                    handleClearCart
-                  }
-                  disabled={
-                    isSubmitting
-                  }
+                  onClick={handleClearCart}
+                  disabled={isSubmitting}
                   className="rounded-full border border-border px-7 py-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-chai transition-colors hover:border-chai disabled:opacity-50"
                 >
                   Clear cart
@@ -774,45 +578,40 @@ function Checkout() {
 
                 <ul className="mt-7 space-y-4">
 
-                  {items.map(
-                    (item) => (
+                  {items.map((item) => (
 
-                      <li
-                        key={item.name}
-                        className="flex gap-3"
-                      >
+                    <li
+                      key={item.name}
+                      className="flex gap-3"
+                    >
 
-                        <img
-                          src={item.image}
-                          alt={item.name}
-                          width={64}
-                          height={64}
-                          className="h-16 w-16 shrink-0 rounded-2xl bg-cream-deep object-contain p-1"
-                        />
+                      <img
+                        src={item.image}
+                        alt={item.name}
+                        width={64}
+                        height={64}
+                        className="h-16 w-16 shrink-0 rounded-2xl bg-cream-deep object-contain p-1"
+                      />
 
-                        <div className="min-w-0 flex-1">
+                      <div className="min-w-0 flex-1">
 
-                          <p className="truncate text-sm font-semibold">
-                            {item.name}
-                          </p>
+                        <p className="truncate text-sm font-semibold">
+                          {item.name}
+                        </p>
 
-                          <p className="mt-1 text-xs text-chai/50">
-                            Quantity:{" "}
-                            {item.qty}
-                          </p>
+                        <p className="mt-1 text-xs text-chai/50">
+                          Quantity: {item.qty}
+                        </p>
 
-                        </div>
+                      </div>
 
-                        <span className="shrink-0 text-sm font-semibold">
-                          ₹
-                          {item.qty *
-                            item.priceValue}
-                        </span>
+                      <span className="shrink-0 text-sm font-semibold">
+                        ₹{item.qty * item.priceValue}
+                      </span>
 
-                      </li>
+                    </li>
 
-                    )
-                  )}
+                  ))}
 
                 </ul>
 

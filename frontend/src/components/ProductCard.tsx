@@ -51,13 +51,19 @@ export function ProductCard({
   const [added, setAdded] = useState(false);
 
   const handleAdd = () => {
-    add({
-      name,
-      ...(slug ? { slug } : {}),
-      price,
-      priceValue: priceValue ?? parsePrice(price),
-      image,
-    });
+    if (!slug) {
+      toast.error("Product information is incomplete.");
+    return;
+  }
+
+  add({
+    name,
+    slug,
+    price,
+    priceValue: priceValue ?? parsePrice(price),
+    image,
+  });
+
 
     setAdded(true);
 
