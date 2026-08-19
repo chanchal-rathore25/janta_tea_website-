@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { ChangeEvent, FormEvent } from "react";
 import { toast } from "sonner";
 
@@ -30,7 +30,21 @@ export function AuthModal() {
   const [form, setForm] =
     useState<FormState>(initialForm);
 
-  if (!open) return null;
+  /* =====================================================
+     RESET MODAL WHEN CLOSED
+  ===================================================== */
+
+  useEffect(() => {
+    if (!open) {
+      setMode("login");
+      setForm(initialForm);
+      setLoading(false);
+    }
+  }, [open]);
+
+  /* =====================================================
+     FORM FIELD UPDATE
+  ===================================================== */
 
   const updateField =
     (field: keyof FormState) =>
@@ -41,13 +55,27 @@ export function AuthModal() {
       }));
     };
 
+  /* =====================================================
+     RESET FORM
+  ===================================================== */
+
   const resetForm = () => {
     setForm(initialForm);
   };
 
-  // =========================
-  // LOGIN
-  // =========================
+  /* =====================================================
+     CLOSE MODAL
+  ===================================================== */
+
+  const closeModal = () => {
+    if (loading) return;
+
+    setOpen(false);
+  };
+
+  /* =====================================================
+     LOGIN
+  ===================================================== */
 
   const handleLogin = async () => {
     const email = form.email.trim().toLowerCase();
@@ -69,30 +97,55 @@ export function AuthModal() {
         password,
       });
 
-    console.log("LOGIN DATA:", data);
-    console.log("LOGIN ERROR:", error);
-
     if (error) {
-      console.error("Supabase login error:", error);
+      console.error(
+        "Supabase login error:",
+        error,
+      );
 
-      toast.error(error.message);
+      const message =
+        error.message.toLowerCase();
+
+      if (
+        message.includes(
+          "invalid login credentials",
+        )
+      ) {
+        toast.error(
+          "Invalid email or password.",
+        );
+      } else if (
+        message.includes(
+          "email not confirmed",
+        )
+      ) {
+        toast.error(
+          "Please confirm your email before logging in.",
+        );
+      } else {
+        toast.error(error.message);
+      }
+
       return;
     }
 
     if (!data.session) {
-      toast.error("Login session could not be created.");
+      toast.error(
+        "Login session could not be created.",
+      );
       return;
     }
 
     toast.success("Login successful!");
 
     resetForm();
+    setMode("login");
     setOpen(false);
   };
 
-  // =========================
-  // SIGNUP
-  // =========================
+  /* =====================================================
+     SIGNUP
+  ===================================================== */
 
   const handleSignup = async () => {
     const name = form.name.trim();
@@ -105,13 +158,37 @@ export function AuthModal() {
       return;
     }
 
+    if (name.length < 2) {
+      toast.error(
+        "Please enter a valid name.",
+      );
+      return;
+    }
+
     if (!phone) {
-      toast.error("Please enter your mobile number.");
+      toast.error(
+        "Please enter your mobile number.",
+      );
+      return;
+    }
+
+    const cleanPhone =
+      phone.replace(/\D/g, "");
+
+    if (
+      cleanPhone.length < 10 ||
+      cleanPhone.length > 15
+    ) {
+      toast.error(
+        "Please enter a valid mobile number.",
+      );
       return;
     }
 
     if (!email) {
-      toast.error("Please enter your email address.");
+      toast.error(
+        "Please enter your email address.",
+      );
       return;
     }
 
@@ -129,13 +206,10 @@ export function AuthModal() {
         options: {
           data: {
             full_name: name,
-            phone,
+            phone: cleanPhone,
           },
         },
       });
-
-    console.log("SIGNUP DATA:", data);
-    console.log("SIGNUP ERROR:", error);
 
     if (error) {
       console.error(
@@ -143,41 +217,74 @@ export function AuthModal() {
         error,
       );
 
-      toast.error(error.message);
-      return;
-    }
+      const message =
+        error.message.toLowerCase();
 
-    // Simple signup flow.
-    // No email verification message here.
-    if (data.user) {
-      toast.success("Account created successfully!");
-
-      resetForm();
-
-      // If Supabase has already created a session,
-      // close the modal directly.
-      if (data.session) {
-        setOpen(false);
-        return;
+      if (
+        message.includes(
+          "user already registered",
+        )
+      ) {
+        toast.error(
+          "An account with this email already exists. Please login.",
+        );
+      } else {
+        toast.error(error.message);
       }
 
-      // Otherwise move to login.
-      setMode("login");
       return;
     }
 
-    toast.error("Account could not be created.");
+    /*
+      If email confirmation is disabled,
+      Supabase normally returns a session.
+    */
+
+    if (data.session) {
+      toast.success(
+        "Account created successfully!",
+      );
+
+      resetForm();
+      setMode("login");
+      setOpen(false);
+
+      return;
+    }
+
+    /*
+      If email confirmation is enabled,
+      there may be a user but no session.
+    */
+
+    if (data.user) {
+      toast.success(
+        "Account created! Please check your email to confirm your account.",
+      );
+
+      resetForm();
+      setMode("login");
+
+      return;
+    }
+
+    toast.error(
+      "Account could not be created.",
+    );
   };
 
-  // =========================
-  // FORGOT PASSWORD
-  // =========================
+  /* =====================================================
+     FORGOT PASSWORD
+  ===================================================== */
 
   const handleForgotPassword = async () => {
-    const email = form.email.trim().toLowerCase();
+    const email =
+      form.email.trim().toLowerCase();
 
     if (!email) {
-      toast.error("Please enter your email address.");
+      toast.error(
+        "Please enter your email address.",
+      );
       return;
     }
 
@@ -208,9 +315,9 @@ export function AuthModal() {
     setMode("login");
   };
 
-  // =========================
-  // FORM SUBMIT
-  // =========================
+  /* =====================================================
+     FORM SUBMIT
+  ===================================================== */
 
   const handleSubmit = async (
     event: FormEvent<HTMLFormElement>,
@@ -245,9 +352,9 @@ export function AuthModal() {
     }
   };
 
-  // =========================
-  // GOOGLE LOGIN
-  // =========================
+  /* =====================================================
+     GOOGLE LOGIN
+  ===================================================== */
 
   const handleGoogleLogin = async () => {
     if (loading) return;
@@ -259,7 +366,8 @@ export function AuthModal() {
         await supabase.auth.signInWithOAuth({
           provider: "google",
           options: {
-            redirectTo: window.location.origin,
+            redirectTo:
+              window.location.origin,
           },
         });
 
@@ -287,8 +395,28 @@ export function AuthModal() {
     }
   };
 
-  const inputClass =
-    "w-full rounded-full border border-border bg-cream px-5 py-3 text-sm outline-none transition-colors focus:border-terracotta";
+  /* =====================================================
+     SWITCH LOGIN / SIGNUP
+  ===================================================== */
+
+  const switchMode = (
+    nextMode: "login" | "signup",
+  ) => {
+    if (loading) return;
+
+    setMode(nextMode);
+
+    setForm((previous) => ({
+      ...previous,
+      password: "",
+    }));
+  };
+
+  /* =====================================================
+     UI
+  ===================================================== */
+
+  if (!open) return null;
 
   const title =
     mode === "login"
@@ -297,48 +425,51 @@ export function AuthModal() {
         ? "Create Account"
         : "Reset Password";
 
+  const inputClass =
+    "w-full rounded-full border border-border bg-cream px-5 py-3 text-sm outline-none transition-colors focus:border-terracotta disabled:opacity-60";
+
   return (
     <div
       className="fixed inset-0 z-[80] flex items-center justify-center bg-chai/50 px-4 backdrop-blur-sm"
-      onClick={() => {
-        if (!loading) {
-          setOpen(false);
-        }
-      }}
+      onClick={closeModal}
     >
       <div
         className="w-full max-w-md rounded-3xl border border-border bg-card p-8 shadow-warm"
-        onClick={(event) => {
-          event.stopPropagation();
-        }}
+        onClick={(event) =>
+          event.stopPropagation()
+        }
         role="dialog"
         aria-modal="true"
+        aria-labelledby="auth-modal-title"
       >
         {/* HEADER */}
 
-        <div className="flex items-start justify-between">
+        <div className="flex items-start justify-between gap-4">
           <div>
             <span className="label-eyebrow text-cardamom">
               Janta Tea Co.
             </span>
 
-            <h2 className="mt-2 font-display text-3xl">
+            <h2
+              id="auth-modal-title"
+              className="mt-2 font-display text-3xl"
+            >
               {title}
             </h2>
           </div>
 
           <button
             type="button"
-            onClick={() => setOpen(false)}
+            onClick={closeModal}
             disabled={loading}
-            className="text-xl text-chai/50 hover:text-chai"
+            className="text-xl text-chai/50 transition-colors hover:text-chai disabled:cursor-not-allowed disabled:opacity-50"
             aria-label="Close authentication dialog"
           >
             ×
           </button>
         </div>
 
-        {/* GOOGLE */}
+        {/* GOOGLE LOGIN */}
 
         {mode !== "forgot" && (
           <>
@@ -346,16 +477,16 @@ export function AuthModal() {
               type="button"
               onClick={handleGoogleLogin}
               disabled={loading}
-              className="mt-6 w-full rounded-full border border-border bg-cream py-3 text-sm font-medium transition-colors hover:border-terracotta disabled:opacity-50"
+              className="mt-6 w-full rounded-full border border-border bg-cream py-3 text-sm font-medium transition-colors hover:border-terracotta disabled:cursor-not-allowed disabled:opacity-50"
             >
-              Continue with Google
+              {loading
+                ? "Please wait..."
+                : "Continue with Google"}
             </button>
 
             <div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-widest text-chai/40">
               <span className="h-px flex-1 bg-border" />
-
               <span>or</span>
-
               <span className="h-px flex-1 bg-border" />
             </div>
           </>
@@ -373,6 +504,7 @@ export function AuthModal() {
             <>
               <input
                 required
+                disabled={loading}
                 type="text"
                 value={form.name}
                 onChange={updateField("name")}
@@ -383,11 +515,13 @@ export function AuthModal() {
 
               <input
                 required
+                disabled={loading}
                 type="tel"
                 value={form.phone}
                 onChange={updateField("phone")}
                 placeholder="Mobile Number"
                 autoComplete="tel"
+                inputMode="tel"
                 className={inputClass}
               />
             </>
@@ -397,6 +531,7 @@ export function AuthModal() {
 
           <input
             required
+            disabled={loading}
             type="email"
             value={form.email}
             onChange={updateField("email")}
@@ -410,6 +545,7 @@ export function AuthModal() {
           {mode !== "forgot" && (
             <input
               required
+              disabled={loading}
               type="password"
               value={form.password}
               onChange={updateField("password")}
@@ -446,9 +582,17 @@ export function AuthModal() {
         {mode === "login" && (
           <button
             type="button"
-            onClick={() => setMode("forgot")}
+            onClick={() => {
+              if (loading) return;
+
+              setMode("forgot");
+              setForm((previous) => ({
+                ...previous,
+                password: "",
+              }));
+            }}
             disabled={loading}
-            className="mt-3 w-full text-center text-xs text-chai/55 hover:text-terracotta"
+            className="mt-3 w-full text-center text-xs text-chai/55 transition-colors hover:text-terracotta disabled:opacity-50"
           >
             Forgot Password?
           </button>
@@ -464,16 +608,15 @@ export function AuthModal() {
 
             <button
               type="button"
-              onClick={() => {
-                if (loading) return;
-
-                setMode(
+              onClick={() =>
+                switchMode(
                   mode === "signup"
                     ? "login"
                     : "signup",
-                );
-              }}
-              className="font-semibold text-terracotta hover:underline"
+                )
+              }
+              disabled={loading}
+              className="font-semibold text-terracotta hover:underline disabled:opacity-50"
             >
               {mode === "signup"
                 ? "Login"
@@ -487,9 +630,9 @@ export function AuthModal() {
         {mode === "forgot" && (
           <button
             type="button"
-            onClick={() => setMode("login")}
+            onClick={() => switchMode("login")}
             disabled={loading}
-            className="mt-5 w-full text-center text-sm font-semibold text-terracotta hover:underline"
+            className="mt-5 w-full text-center text-sm font-semibold text-terracotta hover:underline disabled:opacity-50"
           >
             ← Back to Login
           </button>
