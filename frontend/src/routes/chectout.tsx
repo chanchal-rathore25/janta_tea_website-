@@ -6,6 +6,7 @@ import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { useCart } from "@/lib/cart";
 import { createOrder } from "@/lib/orders.functions";
+import { supabase } from "@/integrations/supabase/client";
 
 const title = "Checkout — Janta Tea Company, Indore";
 
@@ -60,16 +61,349 @@ function Checkout() {
   const grandTotal = total + delivery;
 
   // =====================================================
+  // OPEN RAZORPAY CHECKOUT
+  // =====================================================
+
+ const openRazorpayCheckout = async (
+  orderId: string,
+) => {
+  try {
+    // =================================================
+    // 1. CREATE RAZORPAY ORDER
+    // =================================================
+
+    console.log(
+      "Creating Razorpay order for:",
+      orderId,
+    );
+
+    const {
+      data: razorpayOrder,
+      error: razorpayOrderError,
+    } = await supabase.functions.invoke(
+      "razorpay-create-order",
+      {
+        body: {
+          orderId,
+        },
+      },
+    );
+
+    // -------------------------------------------------
+    // Edge Function Error
+    // -------------------------------------------------
+
+  if (razorpayOrderError) {
+  console.error(
+    "Razorpay order error:",
+    razorpayOrderError,
+  );
+
+  try {
+    const errorBody =
+      await razorpayOrderError.context?.json?.();
+
+    console.error(
+      "Razorpay Edge Function error body:",
+      errorBody,
+    );
+  } catch {
+    console.error(
+      "Could not read Edge Function error body.",
+    );
+  }
+
+  throw new Error(
+    `Unable to start online payment: ${razorpayOrderError.message}`,
+  );
+}
+    // -------------------------------------------------
+    // Debug response
+    // -------------------------------------------------
+
+    console.log(
+      "Razorpay order response:",
+      razorpayOrder,
+    );
+
+    // -------------------------------------------------
+    // Validate response
+    // -------------------------------------------------
+
+    if (!razorpayOrder) {
+      throw new Error(
+        "Razorpay returned an empty response.",
+      );
+    }
+
+    if (
+      !razorpayOrder.razorpayOrderId ||
+      !razorpayOrder.amount ||
+      !razorpayOrder.keyId
+    ) {
+      console.error(
+        "Invalid Razorpay response:",
+        razorpayOrder,
+      );
+
+      throw new Error(
+        `Invalid payment order response: ${JSON.stringify(
+          razorpayOrder,
+        )}`,
+      );
+    }
+
+    // =================================================
+    // 2. CHECK RAZORPAY SCRIPT
+    // =================================================
+
+    if (
+      typeof window.Razorpay !==
+      "function"
+    ) {
+      throw new Error(
+        "Razorpay checkout is not available. Please refresh the page and try again.",
+      );
+    }
+
+    // =================================================
+    // 3. RAZORPAY OPTIONS
+    // =================================================
+
+    const options: RazorpayOptions = {
+      key: razorpayOrder.keyId,
+
+      amount: Number(
+        razorpayOrder.amount,
+      ),
+
+      currency:
+        razorpayOrder.currency ||
+        "INR",
+
+      name: "Janta Tea Company",
+
+      description:
+        "Tea order from Janta Tea Company",
+
+      order_id:
+        razorpayOrder.razorpayOrderId,
+
+      prefill: {
+        name:
+          (
+            document.querySelector(
+              'input[name="name"]',
+            ) as HTMLInputElement
+          )?.value || "",
+
+        contact:
+          (
+            document.querySelector(
+              'input[name="phone"]',
+            ) as HTMLInputElement
+          )?.value || "",
+      },
+
+      theme: {
+        color: "#8B4513",
+      },
+
+      // =================================================
+      // 4. PAYMENT SUCCESS
+      // =================================================
+
+      handler: async (
+        response: RazorpayResponse,
+      ) => {
+        try {
+          console.log(
+            "Razorpay payment response:",
+            response,
+          );
+
+          toast.loading(
+            "Verifying your payment...",
+            {
+              id: "payment-verification",
+            },
+          );
+
+          // ---------------------------------------------
+          // VERIFY PAYMENT
+          // ---------------------------------------------
+
+          const {
+            data: verificationResult,
+            error: verificationError,
+          } =
+            await supabase.functions.invoke(
+              "razorpay-verify-payment",
+              {
+                body: {
+                  orderId,
+
+                  razorpayOrderId:
+                    response.razorpay_order_id,
+
+                  razorpayPaymentId:
+                    response.razorpay_payment_id,
+
+                  razorpaySignature:
+                    response.razorpay_signature,
+                },
+              },
+            );
+
+          // ---------------------------------------------
+          // Verification error
+          // ---------------------------------------------
+
+          if (verificationError) {
+            console.error(
+              "Payment verification error:",
+              verificationError,
+            );
+
+            throw new Error(
+              `Payment verification failed: ${verificationError.message}`,
+            );
+          }
+
+          // ---------------------------------------------
+          // Verification response
+          // ---------------------------------------------
+
+          console.log(
+            "Payment verification response:",
+            verificationResult,
+          );
+
+          if (
+            !verificationResult?.success
+          ) {
+            throw new Error(
+              "Payment could not be verified.",
+            );
+          }
+
+          // =============================================
+          // PAYMENT SUCCESS
+          // =============================================
+
+          clear();
+
+          toast.success(
+            "Payment successful! Your order has been confirmed.",
+            {
+              id: "payment-verification",
+            },
+          );
+        } catch (error) {
+          console.error(
+            "Payment verification failed:",
+            error,
+          );
+
+          toast.error(
+            error instanceof Error
+              ? error.message
+              : "Payment verification failed.",
+            {
+              id: "payment-verification",
+            },
+          );
+        } finally {
+          setIsSubmitting(false);
+        }
+      },
+
+      // =================================================
+      // 5. PAYMENT MODAL DISMISSED
+      // =================================================
+
+      modal: {
+        ondismiss: () => {
+          console.log(
+            "Razorpay payment modal closed.",
+          );
+
+          setIsSubmitting(false);
+
+          toast.info(
+            "Payment was cancelled. Your cart is still saved.",
+          );
+        },
+      },
+    };
+
+    // =================================================
+    // 6. CREATE RAZORPAY INSTANCE
+    // =================================================
+
+    const razorpay =
+      new window.Razorpay(options);
+
+    // =================================================
+    // 7. PAYMENT FAILED
+    // =================================================
+
+    razorpay.on(
+      "payment.failed",
+      (response) => {
+        console.error(
+          "Razorpay payment failed:",
+          response,
+        );
+
+        setIsSubmitting(false);
+
+        toast.error(
+          response.error?.description ||
+            "Payment failed. Please try again.",
+        );
+      },
+    );
+
+    // =================================================
+    // 8. OPEN RAZORPAY
+    // =================================================
+
+    console.log(
+      "Opening Razorpay checkout...",
+    );
+
+    razorpay.open();
+  } catch (error) {
+    console.error(
+      "Razorpay checkout error:",
+      error,
+    );
+
+    setIsSubmitting(false);
+
+    toast.error(
+      error instanceof Error
+        ? error.message
+        : "Unable to start payment.",
+    );
+  }
+};
+
+  // =====================================================
   // HANDLE CHECKOUT
   // =====================================================
 
   const handleSubmit = async (
-    e: React.FormEvent<HTMLFormElement>
+    e: React.FormEvent<HTMLFormElement>,
   ) => {
     e.preventDefault();
 
     if (items.length === 0) {
-      toast.error("Your cart is empty.");
+      toast.error(
+        "Your cart is empty.",
+      );
+
       return;
     }
 
@@ -80,37 +414,81 @@ function Checkout() {
       // GET FORM DATA
       // -------------------------------------------------
 
-      const formData = new FormData(e.currentTarget);
+      const formData =
+        new FormData(e.currentTarget);
 
       const customer = {
         name: String(
-          formData.get("name") || ""
+          formData.get("name") || "",
         ).trim(),
 
         phone: String(
-          formData.get("phone") || ""
+          formData.get("phone") || "",
         ).trim(),
 
         address: String(
-          formData.get("address") || ""
+          formData.get("address") || "",
         ).trim(),
 
         city: String(
-          formData.get("city") || ""
+          formData.get("city") || "",
         ).trim(),
 
         pincode: String(
-          formData.get("pincode") || ""
+          formData.get("pincode") || "",
         ).trim(),
       };
+
+      // -------------------------------------------------
+      // VALIDATE NAME
+      // -------------------------------------------------
+
+      if (customer.name.length < 2) {
+        toast.error(
+          "Please enter your full name.",
+        );
+
+        setIsSubmitting(false);
+        return;
+      }
 
       // -------------------------------------------------
       // VALIDATE PHONE
       // -------------------------------------------------
 
-      if (!/^[6-9]\d{9}$/.test(customer.phone)) {
+      if (
+        !/^[6-9]\d{9}$/.test(
+          customer.phone,
+        )
+      ) {
         toast.error(
-          "Please enter a valid 10-digit mobile number."
+          "Please enter a valid 10-digit mobile number.",
+        );
+
+        setIsSubmitting(false);
+        return;
+      }
+
+      // -------------------------------------------------
+      // VALIDATE ADDRESS
+      // -------------------------------------------------
+
+      if (customer.address.length < 5) {
+        toast.error(
+          "Please enter a complete delivery address.",
+        );
+
+        setIsSubmitting(false);
+        return;
+      }
+
+      // -------------------------------------------------
+      // VALIDATE CITY
+      // -------------------------------------------------
+
+      if (customer.city.length < 2) {
+        toast.error(
+          "Please enter your city.",
         );
 
         setIsSubmitting(false);
@@ -121,9 +499,13 @@ function Checkout() {
       // VALIDATE PINCODE
       // -------------------------------------------------
 
-      if (!/^\d{6}$/.test(customer.pincode)) {
+      if (
+        !/^\d{6}$/.test(
+          customer.pincode,
+        )
+      ) {
         toast.error(
-          "Please enter a valid 6-digit pincode."
+          "Please enter a valid 6-digit pincode.",
         );
 
         setIsSubmitting(false);
@@ -134,13 +516,14 @@ function Checkout() {
       // VALIDATE PRODUCT SLUGS
       // -------------------------------------------------
 
-      const invalidProduct = items.find(
-        (item) => !item.slug
-      );
+      const invalidProduct =
+        items.find(
+          (item) => !item.slug,
+        );
 
       if (invalidProduct) {
         toast.error(
-          `Product information is missing for ${invalidProduct.name}. Please remove it and add it again.`
+          `Product information is missing for ${invalidProduct.name}. Please remove it and add it again.`,
         );
 
         setIsSubmitting(false);
@@ -150,49 +533,56 @@ function Checkout() {
       // =================================================
       // CREATE SUPABASE ORDER
       // =================================================
-      //
-      // IMPORTANT:
-      // We DO NOT send priceValue.
-      //
-      // Supabase server function will fetch the
-      // authoritative price from the products table.
-      //
-      // =================================================
 
-      const order = await createOrder({
-        data: {
-          full_name: customer.name,
+      const order =
+        await createOrder({
+          data: {
+            full_name:
+              customer.name,
 
-          phone: customer.phone,
+            phone:
+              customer.phone,
 
-          address: customer.address,
+            address:
+              customer.address,
 
-          city: customer.city,
+            city:
+              customer.city,
 
-          pincode: customer.pincode,
+            pincode:
+              customer.pincode,
 
-          payment_method:
-            paymentMethod === "cod"
-              ? "cod"
-              : "upi",
+            payment_method:
+              paymentMethod === "cod"
+                ? "cod"
+                : "upi",
 
-          items: items.map((item) => ({
-            slug: item.slug,
-            name: item.name,
-            qty: item.qty,
-          })),
-        },
-      });
+            items: items.map(
+              (item) => ({
+                slug:
+                  item.slug,
+
+                name:
+                  item.name,
+
+                qty:
+                  item.qty,
+              }),
+            ),
+          },
+        });
 
       // =================================================
       // COD
       // =================================================
 
-      if (paymentMethod === "cod") {
+      if (
+        paymentMethod === "cod"
+      ) {
         clear();
 
         toast.success(
-          "Your order has been placed successfully!"
+          "Your order has been placed successfully!",
         );
 
         return;
@@ -201,53 +591,22 @@ function Checkout() {
       // =================================================
       // ONLINE PAYMENT
       // =================================================
-      //
-      // Razorpay will be connected here in the next step
-      // using a Supabase Edge Function.
-      //
-      // =================================================
 
-      toast.success(
-        `Order created successfully. Order total: ₹${order.total}`
+      await openRazorpayCheckout(
+        order.id,
       );
-
-      console.log(
-        "Supabase order created:",
-        order
-      );
-
-      /*
-       * TEMPORARY:
-       *
-       * Online Razorpay payment is intentionally not
-       * started yet.
-       *
-       * Next step:
-       *
-       * Checkout
-       *    ↓
-       * Supabase Edge Function
-       *    ↓
-       * Razorpay order
-       *    ↓
-       * Razorpay Checkout
-       *    ↓
-       * Payment verification
-       */
-
     } catch (error) {
       console.error(
         "Checkout error:",
-        error
+        error,
       );
 
       toast.error(
         error instanceof Error
           ? error.message
-          : "Something went wrong. Please try again."
+          : "Something went wrong. Please try again.",
       );
 
-    } finally {
       setIsSubmitting(false);
     }
   };
@@ -260,7 +619,7 @@ function Checkout() {
     clear();
 
     toast.success(
-      "Your cart has been cleared."
+      "Your cart has been cleared.",
     );
   };
 
@@ -275,9 +634,7 @@ function Checkout() {
 
       <main className="mx-auto max-w-7xl px-5 pb-24 pt-10 sm:px-8 lg:px-12">
 
-        {/* =================================================
-            HEADER
-        ================================================= */}
+        {/* HEADER */}
 
         <div className="max-w-3xl">
 
@@ -296,9 +653,7 @@ function Checkout() {
 
         </div>
 
-        {/* =================================================
-            EMPTY CART
-        ================================================= */}
+        {/* EMPTY CART */}
 
         {items.length === 0 ? (
 
@@ -330,18 +685,14 @@ function Checkout() {
 
           <div className="mt-10 grid gap-8 lg:grid-cols-[1fr_400px]">
 
-            {/* =================================================
-                LEFT
-            ================================================= */}
+            {/* LEFT */}
 
             <form
               onSubmit={handleSubmit}
               className="space-y-7"
             >
 
-              {/* =================================================
-                  DELIVERY DETAILS
-              ================================================= */}
+              {/* DELIVERY DETAILS */}
 
               <section className="rounded-[2rem] border border-border bg-card p-6 shadow-sm sm:p-8">
 
@@ -414,9 +765,7 @@ function Checkout() {
 
               </section>
 
-              {/* =================================================
-                  PAYMENT
-              ================================================= */}
+              {/* PAYMENT */}
 
               <section className="rounded-[2rem] border border-border bg-card p-6 shadow-sm sm:p-8">
 
@@ -436,9 +785,7 @@ function Checkout() {
 
                 </div>
 
-                {/* =================================================
-                    ONLINE PAYMENT
-                ================================================= */}
+                {/* ONLINE PAYMENT */}
 
                 <label
                   className={`mt-7 flex cursor-pointer items-start gap-4 rounded-2xl border p-5 transition-colors ${
@@ -453,10 +800,13 @@ function Checkout() {
                     name="payment"
                     value="online"
                     checked={
-                      paymentMethod === "online"
+                      paymentMethod ===
+                      "online"
                     }
                     onChange={() =>
-                      setPaymentMethod("online")
+                      setPaymentMethod(
+                        "online",
+                      )
                     }
                     className="mt-1 accent-terracotta"
                   />
@@ -478,9 +828,7 @@ function Checkout() {
 
                 </label>
 
-                {/* =================================================
-                    COD
-                ================================================= */}
+                {/* COD */}
 
                 <label
                   className={`mt-4 flex cursor-pointer items-start gap-4 rounded-2xl border p-5 transition-colors ${
@@ -495,10 +843,13 @@ function Checkout() {
                     name="payment"
                     value="cod"
                     checked={
-                      paymentMethod === "cod"
+                      paymentMethod ===
+                      "cod"
                     }
                     onChange={() =>
-                      setPaymentMethod("cod")
+                      setPaymentMethod(
+                        "cod",
+                      )
                     }
                     className="mt-1 accent-terracotta"
                   />
@@ -520,9 +871,7 @@ function Checkout() {
 
               </section>
 
-              {/* =================================================
-                  ACTIONS
-              ================================================= */}
+              {/* ACTIONS */}
 
               <div className="flex flex-col gap-3 sm:flex-row">
 
@@ -533,15 +882,20 @@ function Checkout() {
                 >
                   {isSubmitting
                     ? "Processing..."
-                    : paymentMethod === "cod"
+                    : paymentMethod ===
+                        "cod"
                       ? `Place order · ₹${grandTotal}`
                       : `Continue to payment · ₹${grandTotal}`}
                 </button>
 
                 <button
                   type="button"
-                  onClick={handleClearCart}
-                  disabled={isSubmitting}
+                  onClick={
+                    handleClearCart
+                  }
+                  disabled={
+                    isSubmitting
+                  }
                   className="rounded-full border border-border px-7 py-4 text-[10px] font-semibold uppercase tracking-[0.18em] text-chai transition-colors hover:border-chai disabled:opacity-50"
                 >
                   Clear cart
@@ -556,9 +910,7 @@ function Checkout() {
 
             </form>
 
-            {/* =================================================
-                ORDER SUMMARY
-            ================================================= */}
+            {/* ORDER SUMMARY */}
 
             <aside className="h-fit lg:sticky lg:top-24">
 
@@ -572,9 +924,7 @@ function Checkout() {
                   Order summary
                 </h2>
 
-                {/* =================================================
-                    ITEMS
-                ================================================= */}
+                {/* ITEMS */}
 
                 <ul className="mt-7 space-y-4">
 
@@ -600,13 +950,16 @@ function Checkout() {
                         </p>
 
                         <p className="mt-1 text-xs text-chai/50">
-                          Quantity: {item.qty}
+                          Quantity:{" "}
+                          {item.qty}
                         </p>
 
                       </div>
 
                       <span className="shrink-0 text-sm font-semibold">
-                        ₹{item.qty * item.priceValue}
+                        ₹
+                        {item.qty *
+                          item.priceValue}
                       </span>
 
                     </li>
@@ -615,9 +968,7 @@ function Checkout() {
 
                 </ul>
 
-                {/* =================================================
-                    TOTAL
-                ================================================= */}
+                {/* TOTAL */}
 
                 <div className="mt-7 space-y-3 border-t border-border pt-5 text-sm">
 
@@ -654,16 +1005,15 @@ function Checkout() {
                     </span>
 
                     <span className="font-display text-2xl">
-                      ₹{grandTotal}
+                      ₹
+                      {grandTotal}
                     </span>
 
                   </div>
 
                 </div>
 
-                {/* =================================================
-                    DELIVERY NOTE
-                ================================================= */}
+                {/* DELIVERY NOTE */}
 
                 <div className="mt-6 rounded-2xl bg-cream-deep p-4">
 

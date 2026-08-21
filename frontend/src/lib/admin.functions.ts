@@ -63,7 +63,7 @@ const productSchema = z.object({
     .trim()
     .min(2)
     .max(120)
-    .regex(/^[a-z0-9-]+$/, "slug: sirf chhote akshar, number aur dash"),
+    .regex(/^[a-z0-9-]+$/, "slug: only lowercase letters, numbers, and dashes are allowed"),
   name: z.string().trim().min(2).max(200),
   category_slug: z.string().trim().min(2).max(120),
   notes: z.string().trim().max(600).optional().nullable(),

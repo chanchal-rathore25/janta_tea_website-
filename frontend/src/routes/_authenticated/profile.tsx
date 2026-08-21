@@ -7,8 +7,9 @@ import { Footer } from "@/components/Footer";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
 
-const title = "Mera profile — Janta Tea Company";
-const description = "Apna naam, mobile number aur delivery address update kariye.";
+const title = "My Profile — Janta Tea Company";
+const description =
+  "Update your name, mobile number, and delivery address.";
 
 export const Route = createFileRoute("/_authenticated/profile")({
   head: () => ({
@@ -26,6 +27,7 @@ export const Route = createFileRoute("/_authenticated/profile")({
 
 function ProfilePage() {
   const { user, profile, refreshProfile, isAdmin, signOut } = useAuth();
+
   const [form, setForm] = useState({
     full_name: "",
     phone: "",
@@ -33,6 +35,7 @@ function ProfilePage() {
     city: "Indore",
     pincode: "",
   });
+
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -53,9 +56,12 @@ function ProfilePage() {
   return (
     <div className="min-h-screen bg-cream text-chai">
       <Navbar />
+
       <main className="mx-auto max-w-3xl px-6 py-16">
         <span className="label-eyebrow text-cardamom">Account</span>
-        <h1 className="mt-3 font-display text-5xl">Mera profile</h1>
+
+        <h1 className="mt-3 font-display text-5xl">My Profile</h1>
+
         <p className="mt-2 text-sm text-chai/60">{user?.email}</p>
 
         <div className="mt-6 flex flex-wrap gap-3">
@@ -63,16 +69,18 @@ function ProfilePage() {
             to="/my-orders"
             className="rounded-full border border-border px-6 py-3 text-[11px] font-semibold tracking-widest uppercase hover:border-chai"
           >
-            Mere orders
+            My Orders
           </Link>
+
           {isAdmin && (
             <Link
               to="/admin"
               className="rounded-full bg-cardamom px-6 py-3 text-[11px] font-semibold tracking-widest text-cream uppercase"
             >
-              Admin dashboard
+              Admin Dashboard
             </Link>
           )}
+
           <button
             onClick={() => void signOut()}
             className="rounded-full border border-border px-6 py-3 text-[11px] font-semibold tracking-widest uppercase hover:border-terracotta"
@@ -85,69 +93,115 @@ function ProfilePage() {
           className="mt-10 space-y-3 rounded-3xl border border-border bg-card/60 p-6"
           onSubmit={async (e) => {
             e.preventDefault();
+
             if (!user) return;
+
             setBusy(true);
+
             const { error } = await supabase
               .from("profiles")
-              .upsert({ id: user.id, ...form }, { onConflict: "id" });
+              .upsert(
+                {
+                  id: user.id,
+                  ...form,
+                },
+                {
+                  onConflict: "id",
+                }
+              );
+
             setBusy(false);
+
             if (error) {
               toast.error(error.message);
               return;
             }
+
             await refreshProfile();
-            toast.success("Profile save ho gaya");
+
+            toast.success("Profile saved successfully");
           }}
         >
           <input
             required
             value={form.full_name}
-            onChange={(e) => setForm({ ...form, full_name: e.target.value })}
-            placeholder="Poora naam"
+            onChange={(e) =>
+              setForm({
+                ...form,
+                full_name: e.target.value,
+              })
+            }
+            placeholder="Full Name"
             maxLength={100}
             className={input}
           />
+
           <input
             required
             type="tel"
             value={form.phone}
-            onChange={(e) => setForm({ ...form, phone: e.target.value })}
-            placeholder="Mobile number"
+            onChange={(e) =>
+              setForm({
+                ...form,
+                phone: e.target.value,
+              })
+            }
+            placeholder="Mobile Number"
             maxLength={20}
             className={input}
           />
+
           <input
             value={form.address}
-            onChange={(e) => setForm({ ...form, address: e.target.value })}
-            placeholder="Delivery address"
+            onChange={(e) =>
+              setForm({
+                ...form,
+                address: e.target.value,
+              })
+            }
+            placeholder="Delivery Address"
             maxLength={400}
             className={input}
           />
+
           <div className="grid gap-3 sm:grid-cols-2">
             <input
               value={form.city}
-              onChange={(e) => setForm({ ...form, city: e.target.value })}
-              placeholder="Sheher"
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  city: e.target.value,
+                })
+              }
+              placeholder="City"
               maxLength={80}
               className={input}
             />
+
             <input
               value={form.pincode}
-              onChange={(e) => setForm({ ...form, pincode: e.target.value })}
+              onChange={(e) =>
+                setForm({
+                  ...form,
+                  pincode: e.target.value,
+                })
+              }
               placeholder="Pincode"
               maxLength={10}
               className={input}
             />
           </div>
+
           <button
             type="submit"
             disabled={busy}
             className="rounded-full bg-chai px-8 py-3 text-[11px] font-semibold tracking-widest text-cream uppercase hover:bg-terracotta disabled:opacity-50"
           >
-            {busy ? "Save ho raha hai..." : "Save kariye"}
+            {busy ? "Saving..." : "Save Profile"}
           </button>
         </form>
       </main>
+
       <Footer />
     </div>
   );

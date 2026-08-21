@@ -14,106 +14,89 @@ const orderSchema = z.object({
   address: z.string().trim().min(5).max(400),
   city: z.string().trim().min(2).max(80),
   pincode: z.string().trim().min(4).max(10),
-
-  payment_method: z.enum(["upi", "card", "netbanking", "cod"]),
-
+  payment_method: z.enum([
+    "upi",
+    "card",
+    "netbanking",
+    "cod",
+  ]),
   items: z.array(itemSchema).min(1).max(50),
 });
 
-// =====================================================
-// CREATE ORDER
-// =====================================================
-
-export const createOrder = createServerFn({ method: "POST" })
+export const createOrder = createServerFn({
+  method: "POST",
+})
   .middleware([requireSupabaseAuth])
-
-  .inputValidator((input) =>
-    orderSchema.parse(input)
-  )
-
+  .validator((input) => orderSchema.parse(input))
   .handler(async ({ data, context }) => {
     const { supabase, userId } = context;
 
-    // =================================================
-    // GET PRODUCT SLUGS
-    // =================================================
+    // -----------------------------------------
+    // 1. Get products from database
+    // -----------------------------------------
 
     const slugs = data.items.map(
-      (item) => item.slug
+      (item) => item.slug,
     );
 
-    // Remove duplicate slugs
     const uniqueSlugs = [
       ...new Set(slugs),
     ];
 
-    // =================================================
-    // FETCH PRODUCTS FROM DATABASE
-    // =================================================
-    //
-    // IMPORTANT:
-    // Price comes ONLY from Supabase.
-    // Client priceValue is completely ignored.
-    //
-    // =================================================
-
-    const { data: products, error: productError } =
-      await supabase
-        .from("products")
-        .select(
-          "slug, name, price_value, unit, image_url, category_slug, in_stock"
-        )
-        .in("slug", uniqueSlugs);
+    const {
+      data: products,
+      error: productError,
+    } = await supabase
+      .from("products")
+      .select(
+        "slug, name, price_value, unit, image_url, category, in_stock",
+      )
+      .in("slug", uniqueSlugs);
 
     if (productError) {
       console.error(
         "Product lookup error:",
-        productError
+        productError,
       );
 
       throw new Error(
-        "Unable to verify products."
+        `Unable to verify products: ${productError.message}`,
       );
     }
 
-    // =================================================
-    // CREATE PRODUCT MAP
-    // =================================================
+    // -----------------------------------------
+    // 2. Convert products into lookup map
+    // -----------------------------------------
 
     const productsBySlug = new Map(
       (products ?? []).map((product) => [
         product.slug,
         product,
-      ])
+      ]),
     );
 
-    // =================================================
-    // PREPARE ORDER ITEMS
-    // =================================================
+    // -----------------------------------------
+    // 3. Validate products + calculate prices
+    // -----------------------------------------
 
     const lines = data.items.map((item) => {
-      const product = productsBySlug.get(
-        item.slug
-      );
+      const product =
+        productsBySlug.get(item.slug);
 
-      // Product doesn't exist
       if (!product) {
         throw new Error(
-          `Product not found: ${item.slug}`
+          `Product not found: ${item.slug}`,
         );
       }
 
-      // Product is out of stock
       if (product.in_stock === false) {
         throw new Error(
-          `${product.name} is currently out of stock.`
+          `${product.name} is currently out of stock.`,
         );
       }
 
-      // IMPORTANT:
-      // Use DATABASE price.
       const unitPrice = Number(
-        product.price_value
+        product.price_value,
       );
 
       if (
@@ -121,27 +104,23 @@ export const createOrder = createServerFn({ method: "POST" })
         unitPrice < 0
       ) {
         throw new Error(
-          `Invalid price for ${product.name}.`
+          `Invalid price for ${product.name}.`,
         );
       }
 
       return {
         product_slug: product.slug,
-
         name: product.name,
-
         image_url:
           product.image_url ?? null,
-
         unit_price: unitPrice,
-
         qty: item.qty,
       };
     });
 
-    // =================================================
-    // CALCULATE SUBTOTAL
-    // =================================================
+    // -----------------------------------------
+    // 4. Calculate totals on server
+    // -----------------------------------------
 
     const subtotal = Number(
       lines
@@ -150,112 +129,77 @@ export const createOrder = createServerFn({ method: "POST" })
             sum +
             item.unit_price *
               item.qty,
-          0
+          0,
         )
-        .toFixed(2)
+        .toFixed(2),
     );
 
-    // =================================================
-    // DELIVERY CHARGE
-    // =================================================
-
     const delivery_fee =
-      subtotal >= 500
-        ? 0
-        : 60;
-
-    // =================================================
-    // FINAL TOTAL
-    // =================================================
+      subtotal >= 500 ? 0 : 60;
 
     const total = Number(
       (
         subtotal +
         delivery_fee
-      ).toFixed(2)
+      ).toFixed(2),
     );
 
-    // =================================================
-    // CREATE ORDER
-    // =================================================
+    // -----------------------------------------
+    // 5. Create order
+    // -----------------------------------------
 
-    const { data: order, error: orderError } =
-      await supabase
-        .from("orders")
-        .insert({
-          user_id: userId,
-
-          full_name:
-            data.full_name,
-
-          phone:
-            data.phone,
-
-          address:
-            data.address,
-
-          city:
-            data.city,
-
-          pincode:
-            data.pincode,
-
-          subtotal,
-
-          delivery_fee,
-
-          total,
-
-          payment_method:
-            data.payment_method,
-
-          payment_status:
-            "pending",
-
-          status:
-            "placed",
-        })
-        .select(
-          "id, total, delivery_fee, subtotal, payment_method, payment_status, status"
-        )
-        .single();
+    const {
+      data: order,
+      error: orderError,
+    } = await supabase
+      .from("orders")
+      .insert({
+        user_id: userId,
+        full_name: data.full_name,
+        phone: data.phone,
+        address: data.address,
+        city: data.city,
+        pincode: data.pincode,
+        subtotal,
+        delivery_fee,
+        total,
+        payment_method:
+          data.payment_method,
+        payment_status: "pending",
+        status: "placed",
+      })
+      .select(
+        "id, total, delivery_fee, subtotal, payment_method, payment_status, status",
+      )
+      .single();
 
     if (orderError) {
       console.error(
         "Order creation error:",
-        orderError
+        orderError,
       );
 
       throw new Error(
-        "Unable to create your order."
+        `Unable to create your order: ${orderError.message}`,
       );
     }
 
-    // =================================================
-    // CREATE ORDER ITEMS
-    // =================================================
+    // -----------------------------------------
+    // 6. Create order items
+    // -----------------------------------------
 
-    const orderItems = lines.map(
-      (item) => ({
-        order_id:
-          order.id,
-
+    const orderItems =
+      lines.map((item) => ({
+        order_id: order.id,
         product_slug:
           item.product_slug,
-
-        name:
-          item.name,
-
+        name: item.name,
         image_url:
           item.image_url,
-
         unit_price:
           item.unit_price,
-
-        qty:
-          item.qty,
-      })
-    );
+        qty: item.qty,
+      }));
 
     const {
       error: orderItemsError,
@@ -266,57 +210,61 @@ export const createOrder = createServerFn({ method: "POST" })
     if (orderItemsError) {
       console.error(
         "Order items creation error:",
-        orderItemsError
+        orderItemsError,
       );
 
-      // Important:
-      // The order was created but its items failed.
-      // Throw so the UI doesn't show false success.
       throw new Error(
-        "Order was created but order items could not be saved."
+        `Order was created but order items could not be saved: ${orderItemsError.message}`,
       );
     }
 
-    // =================================================
-    // RETURN ORDER
-    // =================================================
+    // -----------------------------------------
+    // 7. Return created order
+    // -----------------------------------------
 
     return order;
   });
 
-// =====================================================
-// LIST MY ORDERS
-// =====================================================
 
-export const listMyOrders = createServerFn({
-  method: "GET",
-})
-  .middleware([requireSupabaseAuth])
+// =============================================
+// MY ORDERS
+// =============================================
 
-  .handler(async ({ context }) => {
-    const { data, error } =
-      await context.supabase
-        .from("orders")
-        .select(
-          "*, order_items(*)"
-        )
-        .order(
-          "created_at",
-          {
-            ascending: false,
-          }
-        );
+export const listMyOrders =
+  createServerFn({
+    method: "GET",
+  })
+    .middleware([
+      requireSupabaseAuth,
+    ])
+    .handler(
+      async ({ context }) => {
+        const {
+          data,
+          error,
+        } = await context.supabase
+          .from("orders")
+          .select(
+            "*, order_items(*)",
+          )
+          .order(
+            "created_at",
+            {
+              ascending: false,
+            },
+          );
 
-    if (error) {
-      console.error(
-        "List orders error:",
-        error
-      );
+        if (error) {
+          console.error(
+            "List orders error:",
+            error,
+          );
 
-      throw new Error(
-        "Unable to load your orders."
-      );
-    }
+          throw new Error(
+            `Unable to load your orders: ${error.message}`,
+          );
+        }
 
-    return data ?? [];
-  });
+        return data ?? [];
+      },
+    );
