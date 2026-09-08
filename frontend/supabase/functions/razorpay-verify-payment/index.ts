@@ -1,5 +1,12 @@
 import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods": "POST, OPTIONS",
+};
+
 const supabaseUrl = Deno.env.get("SUPABASE_URL");
 const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
@@ -53,18 +60,35 @@ function safeEqual(left: string, right: string) {
 
   for (let index = 0; index < left.length; index += 1) {
     result |=
-      left.charCodeAt(index) ^
-      right.charCodeAt(index);
+      left.charCodeAt(index) ^ right.charCodeAt(index);
   }
 
   return result === 0;
 }
 
 Deno.serve(async (request) => {
+  // ==========================================
+  // CORS PREFLIGHT
+  // ==========================================
+
+  if (request.method === "OPTIONS") {
+    return new Response("ok", {
+      headers: corsHeaders,
+    });
+  }
+
   if (request.method !== "POST") {
     return new Response(
-      "Method not allowed",
-      { status: 405 },
+      JSON.stringify({
+        error: "Method not allowed",
+      }),
+      {
+        status: 405,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      },
     );
   }
 
@@ -77,11 +101,17 @@ Deno.serve(async (request) => {
       request.headers.get("Authorization");
 
     if (!authHeader?.startsWith("Bearer ")) {
-      return Response.json(
-        {
+      return new Response(
+        JSON.stringify({
           error: "Authentication required.",
+        }),
+        {
+          status: 401,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
         },
-        { status: 401 },
       );
     }
 
@@ -91,16 +121,20 @@ Deno.serve(async (request) => {
     const {
       data: { user },
       error: userError,
-    } = await supabase.auth.getUser(
-      accessToken,
-    );
+    } = await supabase.auth.getUser(accessToken);
 
     if (userError || !user) {
-      return Response.json(
-        {
+      return new Response(
+        JSON.stringify({
           error: "Invalid authentication.",
+        }),
+        {
+          status: 401,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
         },
-        { status: 401 },
       );
     }
 
@@ -124,11 +158,17 @@ Deno.serve(async (request) => {
       typeof razorpayPaymentId !== "string" ||
       typeof razorpaySignature !== "string"
     ) {
-      return Response.json(
-        {
+      return new Response(
+        JSON.stringify({
           error: "Invalid payment data.",
+        }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
         },
-        { status: 400 },
       );
     }
 
@@ -147,11 +187,17 @@ Deno.serve(async (request) => {
         .single();
 
     if (orderError || !order) {
-      return Response.json(
-        {
+      return new Response(
+        JSON.stringify({
           error: "Order not found.",
+        }),
+        {
+          status: 404,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
         },
-        { status: 404 },
       );
     }
 
@@ -163,11 +209,17 @@ Deno.serve(async (request) => {
       order.razorpay_order_id !==
       razorpayOrderId
     ) {
-      return Response.json(
-        {
+      return new Response(
+        JSON.stringify({
           error: "Payment order mismatch.",
+        }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
         },
-        { status: 400 },
       );
     }
 
@@ -176,10 +228,18 @@ Deno.serve(async (request) => {
     // ==========================================
 
     if (order.payment_status === "paid") {
-      return Response.json({
-        success: true,
-        message: "Payment already verified.",
-      });
+      return new Response(
+        JSON.stringify({
+          success: true,
+          message: "Payment already verified.",
+        }),
+        {
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
+        },
+      );
     }
 
     // ==========================================
@@ -190,9 +250,7 @@ Deno.serve(async (request) => {
       `${razorpayOrderId}|${razorpayPaymentId}`;
 
     const expectedSignature =
-      await createSignature(
-        signaturePayload,
-      );
+      await createSignature(signaturePayload);
 
     if (
       !safeEqual(
@@ -200,11 +258,17 @@ Deno.serve(async (request) => {
         expectedSignature,
       )
     ) {
-      return Response.json(
-        {
+      return new Response(
+        JSON.stringify({
           error: "Invalid payment signature.",
+        }),
+        {
+          status: 400,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
         },
-        { status: 400 },
       );
     }
 
@@ -230,32 +294,57 @@ Deno.serve(async (request) => {
         updateError,
       );
 
-      return Response.json(
-        {
+      return new Response(
+        JSON.stringify({
           error:
             "Payment was verified but order could not be updated.",
+        }),
+        {
+          status: 500,
+          headers: {
+            ...corsHeaders,
+            "Content-Type": "application/json",
+          },
         },
-        { status: 500 },
       );
     }
 
-    return Response.json({
-      success: true,
-      message: "Payment verified successfully.",
-      orderId: order.id,
-      paymentId: razorpayPaymentId,
-    });
+    // ==========================================
+    // SUCCESS
+    // ==========================================
+
+    return new Response(
+      JSON.stringify({
+        success: true,
+        message: "Payment verified successfully.",
+        orderId: order.id,
+        paymentId: razorpayPaymentId,
+      }),
+      {
+        status: 200,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
+      },
+    );
   } catch (error) {
     console.error(
       "Payment verification error:",
       error,
     );
 
-    return Response.json(
-      {
+    return new Response(
+      JSON.stringify({
         error: "Something went wrong.",
+      }),
+      {
+        status: 500,
+        headers: {
+          ...corsHeaders,
+          "Content-Type": "application/json",
+        },
       },
-      { status: 500 },
     );
   }
 });

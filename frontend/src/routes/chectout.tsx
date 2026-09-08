@@ -93,25 +93,37 @@ function Checkout() {
     // Edge Function Error
     // -------------------------------------------------
 
-  if (razorpayOrderError) {
+if (razorpayOrderError) {
   console.error(
     "Razorpay order error:",
     razorpayOrderError,
   );
 
-  try {
-    const errorBody =
-      await razorpayOrderError.context?.json?.();
+  console.error(
+    "Error name:",
+    razorpayOrderError.name,
+  );
 
-    console.error(
-      "Razorpay Edge Function error body:",
-      errorBody,
-    );
-  } catch {
-    console.error(
-      "Could not read Edge Function error body.",
-    );
-  }
+  console.error(
+    "Error message:",
+    razorpayOrderError.message,
+  );
+
+  console.error(
+    "Error context:",
+    razorpayOrderError.context,
+  );
+
+  console.error(
+    "Full error:",
+    JSON.stringify(
+      razorpayOrderError,
+      Object.getOwnPropertyNames(
+        razorpayOrderError,
+      ),
+      2,
+    ),
+  );
 
   throw new Error(
     `Unable to start online payment: ${razorpayOrderError.message}`,
@@ -352,9 +364,30 @@ function Checkout() {
       "payment.failed",
       (response) => {
         console.error(
-          "Razorpay payment failed:",
-          response,
-        );
+  "Razorpay payment failed:",
+  response,
+);
+
+console.error(
+  "Payment error details:",
+  JSON.stringify(response.error, null, 2),
+);
+
+console.error(
+  "Payment error code:",
+  response.error?.code,
+);
+
+console.error(
+  "Payment error description:",
+  response.error?.description,
+
+);
+
+console.error(
+  "Payment error reason:",
+  response.error?.reason,
+);
 
         setIsSubmitting(false);
 

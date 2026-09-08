@@ -1,46 +1,460 @@
-// Follow this setup guide to integrate the Deno language server with your editor:
-// https://deno.land/manual/getting_started/setup_your_environment
-// This enables autocomplete, go to definition, etc.
+import { createClient } from "https://esm.sh/@supabase/supabase-js@2";
 
-// Setup type definitions for built-in Supabase Runtime APIs
-import "@supabase/functions-js/edge-runtime.d.ts";
-import { withSupabase } from "@supabase/server";
+const supabaseUrl = Deno.env.get("SUPABASE_URL");
+const serviceRoleKey = Deno.env.get("SUPABASE_SERVICE_ROLE_KEY");
 
-console.log("Hello from Functions!");
+const razorpayKeyId = Deno.env.get("RAZORPAY_KEY_ID");
+const razorpayKeySecret = Deno.env.get("RAZORPAY_KEY_SECRET");
 
-// This endpoint uses 'publishable' | 'secret' access, apiKey is required.
-// Use publishable for Client-facing, key-validated endpoints
-// Use secret for Server-to-server, internal calls
-export default {
-  fetch: withSupabase({ auth: ["publishable", "secret"] }, async (req, ctx) => {
-    // Called by another service with a secret key
-    // ctx.supabaseAdmin bypasses RLS — use for privileged operations
-    /*
-    if (ctx.authMode === "secret") {
-      const { user_id } = await req.json();
-      const { data } = await ctx.supabaseAdmin.auth.admin.getUserById(user_id);
+if (
+  !supabaseUrl ||
+  !serviceRoleKey ||
+  !razorpayKeyId ||
+  !razorpayKeySecret
+) {
+  throw new Error(
+    "Razorpay payment service is not configured.",
+  );
+}
 
-      return Response.json({
-        email: data?.user?.email,
-      });
-    }
-    */
+const supabase = createClient(
+  supabaseUrl,
+  serviceRoleKey,
+);
 
-    const { name } = await req.json();
-
-    return Response.json({
-      message: `Hello ${name}!`,
-    });
-  }),
+const corsHeaders = {
+  "Access-Control-Allow-Origin": "*",
+  "Access-Control-Allow-Headers":
+    "authorization, x-client-info, apikey, content-type",
+  "Access-Control-Allow-Methods":
+    "POST, OPTIONS",
 };
 
-/* To invoke locally:
+// =====================================================
+// CREATE RAZORPAY AUTH HEADER
+// =====================================================
 
-  1. Run `supabase start` (see: https://supabase.com/docs/reference/cli/supabase-start)
-  2. Make an HTTP request:
+function createRazorpayAuthHeader() {
+  const credentials =
+    `${razorpayKeyId}:${razorpayKeySecret}`;
 
-  curl -i --location --request POST 'http://127.0.0.1:54321/functions/v1/razorpay-create-order' \
-    --header 'apiKey: sb_publishable_ACJWlzQHlZjBrEguHvfOxg_3BJgxAaH' \
-    --data '{"name":"Functions"}'
+  const encoded =
+    btoa(credentials);
 
-*/
+  return `Basic ${encoded}`;
+}
+
+// =====================================================
+// EDGE FUNCTION
+// =====================================================
+
+Deno.serve(async (request) => {
+  // ===================================================
+  // CORS
+  // ===================================================
+
+  if (request.method === "OPTIONS") {
+    return new Response(
+      "ok",
+      {
+        headers: corsHeaders,
+      },
+    );
+  }
+
+  if (request.method !== "POST") {
+    return Response.json(
+      {
+        error: "Method not allowed.",
+      },
+      {
+        status: 405,
+        headers: corsHeaders,
+      },
+    );
+  }
+
+  try {
+    // =================================================
+    // 1. AUTHENTICATE USER
+    // =================================================
+
+    const authHeader =
+      request.headers.get("Authorization");
+
+    if (
+      !authHeader ||
+      !authHeader.startsWith("Bearer ")
+    ) {
+      return Response.json(
+        {
+          error: "Authentication required.",
+        },
+        {
+          status: 401,
+          headers: corsHeaders,
+        },
+      );
+    }
+
+    const accessToken =
+      authHeader.replace("Bearer ", "");
+
+    const {
+      data: { user },
+      error: userError,
+    } = await supabase.auth.getUser(
+      accessToken,
+    );
+
+    if (userError || !user) {
+      return Response.json(
+        {
+          error: "Invalid authentication.",
+        },
+        {
+          status: 401,
+          headers: corsHeaders,
+        },
+      );
+    }
+
+    // =================================================
+    // 2. READ REQUEST BODY
+    // =================================================
+
+    const body = await request.json();
+
+    const orderId = body?.orderId;
+
+    if (
+      typeof orderId !== "string" ||
+      orderId.trim().length === 0
+    ) {
+      return Response.json(
+        {
+          error: "Order ID is required.",
+        },
+        {
+          status: 400,
+          headers: corsHeaders,
+        },
+      );
+    }
+
+    // =================================================
+    // 3. GET ORDER FROM DATABASE
+    // =================================================
+    //
+    // IMPORTANT:
+    // We DO NOT trust amount from frontend.
+    // The amount comes from our Supabase order.
+    //
+
+    const {
+      data: order,
+      error: orderError,
+    } = await supabase
+      .from("orders")
+      .select(
+        `
+          id,
+          user_id,
+          total,
+          payment_status,
+          status,
+          razorpay_order_id,
+          razorpay_payment_id
+        `,
+      )
+      .eq("id", orderId)
+      .eq("user_id", user.id)
+      .single();
+
+    if (orderError || !order) {
+      console.error(
+        "Order lookup failed:",
+        orderError,
+      );
+
+      return Response.json(
+        {
+          error: "Order not found.",
+        },
+        {
+          status: 404,
+          headers: corsHeaders,
+        },
+      );
+    }
+
+    // =================================================
+    // 4. CHECK ORDER STATUS
+    // =================================================
+
+    if (
+      order.payment_status === "paid"
+    ) {
+      return Response.json(
+        {
+          error: "This order has already been paid.",
+        },
+        {
+          status: 400,
+          headers: corsHeaders,
+        },
+      );
+    }
+
+    // =================================================
+    // 5. REUSE EXISTING RAZORPAY ORDER
+    // =================================================
+    //
+    // Prevent creating multiple Razorpay orders
+    // if the user retries payment.
+    //
+
+    if (order.razorpay_order_id) {
+      const amountInPaise =
+        Math.round(
+          Number(order.total) * 100,
+        );
+
+      if (
+        !Number.isFinite(amountInPaise) ||
+        amountInPaise <= 0
+      ) {
+        return Response.json(
+          {
+            error:
+              "Invalid order amount.",
+          },
+          {
+            status: 400,
+            headers: corsHeaders,
+          },
+        );
+      }
+
+      return Response.json(
+        {
+          success: true,
+          razorpayOrderId:
+            order.razorpay_order_id,
+          amount: amountInPaise,
+          currency: "INR",
+          keyId: razorpayKeyId,
+        },
+        {
+          status: 200,
+          headers: corsHeaders,
+        },
+      );
+    }
+
+    // =================================================
+    // 6. VALIDATE ORDER TOTAL
+    // =================================================
+
+    const total =
+      Number(order.total);
+
+    if (
+      !Number.isFinite(total) ||
+      total <= 0
+    ) {
+      return Response.json(
+        {
+          error:
+            "Invalid order amount.",
+        },
+        {
+          status: 400,
+          headers: corsHeaders,
+        },
+      );
+    }
+
+    // Razorpay requires amount in paise.
+    const amountInPaise =
+      Math.round(total * 100);
+
+    if (amountInPaise <= 0) {
+      return Response.json(
+        {
+          error:
+            "Order amount must be greater than zero.",
+        },
+        {
+          status: 400,
+          headers: corsHeaders,
+        },
+      );
+    }
+
+    // =================================================
+    // 7. CREATE RAZORPAY ORDER
+    // =================================================
+
+    const razorpayResponse =
+      await fetch(
+        "https://api.razorpay.com/v1/orders",
+        {
+          method: "POST",
+
+          headers: {
+            "Content-Type":
+              "application/json",
+
+            Authorization:
+              createRazorpayAuthHeader(),
+          },
+
+          body: JSON.stringify({
+            amount:
+              amountInPaise,
+
+            currency: "INR",
+
+            receipt:
+              `janta_${order.id}`,
+
+            notes: {
+              supabase_order_id:
+                order.id,
+
+              user_id:
+                user.id,
+            },
+          }),
+        },
+      );
+
+    // =================================================
+    // 8. HANDLE RAZORPAY ERROR
+    // =================================================
+
+    if (!razorpayResponse.ok) {
+      const razorpayError =
+        await razorpayResponse.text();
+
+      console.error(
+        "Razorpay API error:",
+        razorpayError,
+      );
+
+      return Response.json(
+        {
+          error:
+            "Unable to create Razorpay order.",
+        },
+        {
+          status: 502,
+          headers: corsHeaders,
+        },
+      );
+    }
+
+    const razorpayOrder =
+      await razorpayResponse.json();
+
+    // =================================================
+    // 9. VALIDATE RAZORPAY RESPONSE
+    // =================================================
+
+    if (
+      typeof razorpayOrder?.id !==
+      "string"
+    ) {
+      console.error(
+        "Invalid Razorpay response:",
+        razorpayOrder,
+      );
+
+      return Response.json(
+        {
+          error:
+            "Invalid response from Razorpay.",
+        },
+        {
+          status: 502,
+          headers: corsHeaders,
+        },
+      );
+    }
+
+    // =================================================
+    // 10. SAVE RAZORPAY ORDER ID
+    // =================================================
+
+    const {
+      error: updateError,
+    } = await supabase
+      .from("orders")
+      .update({
+        razorpay_order_id:
+          razorpayOrder.id,
+      })
+      .eq("id", order.id)
+      .eq("user_id", user.id);
+
+    if (updateError) {
+      console.error(
+        "Failed to save Razorpay order ID:",
+        updateError,
+      );
+
+      return Response.json(
+        {
+          error:
+            "Razorpay order was created but could not be linked to your order.",
+        },
+        {
+          status: 500,
+          headers: corsHeaders,
+        },
+      );
+    }
+
+    // =================================================
+    // 11. RETURN DATA TO FRONTEND
+    // =================================================
+
+    return Response.json(
+      {
+        success: true,
+
+        razorpayOrderId:
+          razorpayOrder.id,
+
+        amount:
+          amountInPaise,
+
+        currency: "INR",
+
+        keyId:
+          razorpayKeyId,
+      },
+      {
+        status: 200,
+        headers: corsHeaders,
+      },
+    );
+  } catch (error) {
+    console.error(
+      "Razorpay create order error:",
+      error,
+    );
+
+    return Response.json(
+      {
+        error:
+          "Something went wrong while creating the payment order.",
+      },
+      {
+        status: 500,
+        headers: corsHeaders,
+      },
+    );
+  }
+});
