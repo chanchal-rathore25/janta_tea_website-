@@ -47,7 +47,7 @@ export const Route = createFileRoute("/chectout")({
 
 function Checkout() {
   const { items, total, clear } = useCart();
-
+  const navigate = Route.useNavigate();
   const [isSubmitting, setIsSubmitting] = useState(false);
 
   const [paymentMethod, setPaymentMethod] =
@@ -305,12 +305,22 @@ if (razorpayOrderError) {
 
           clear();
 
-          toast.success(
-            "Payment successful! Your order has been confirmed.",
-            {
-              id: "payment-verification",
-            },
-          );
+toast.success(
+  "Payment successful! Your order has been confirmed.",
+  {
+    id: "payment-verification",
+  },
+);
+
+navigate({
+  to: "/order-success",
+  search: {
+    orderId,
+    paymentId: response.razorpay_payment_id,
+    amount: Number(razorpayOrder.amount) / 100,
+    paymentMethod: "online",
+  },
+});
         } catch (error) {
           console.error(
             "Payment verification failed:",
@@ -609,17 +619,24 @@ console.error(
       // COD
       // =================================================
 
-      if (
-        paymentMethod === "cod"
-      ) {
-        clear();
+      if (paymentMethod === "cod") {
+  clear();
 
-        toast.success(
-          "Your order has been placed successfully!",
-        );
+  toast.success(
+    "Your order has been placed successfully!",
+  );
 
-        return;
-      }
+  navigate({
+    to: "/order-success",
+    search: {
+      orderId: order.id,
+      amount: grandTotal,
+      paymentMethod: "cod",
+    },
+  });
+
+  return;
+}
 
       // =================================================
       // ONLINE PAYMENT
