@@ -1,3 +1,4 @@
+
 import { Link } from "@tanstack/react-router";
 import { categories } from "@/data/category";
 
@@ -5,7 +6,6 @@ export function Category() {
   return (
     <section id="categories" className="px-6 py-20">
       <div className="mx-auto max-w-7xl">
-
         {/* Heading */}
         <div className="flex flex-wrap items-end justify-between gap-6">
           <div>
@@ -33,11 +33,11 @@ export function Category() {
               className="group text-center"
             >
               <div className="relative overflow-hidden rounded-full bg-cream-deep ring-1 ring-border transition-all duration-500 group-hover:ring-terracotta group-hover:shadow-lg">
-
                 <img
                   src={cat.image}
                   alt={cat.name}
                   loading="lazy"
+                  decoding="async"
                   width={600}
                   height={600}
                   className="aspect-square w-full object-cover transition-transform duration-500 group-hover:scale-105"

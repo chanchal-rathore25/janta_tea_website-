@@ -1,3 +1,4 @@
+
 import aboutShop from "@/assets/about-shop.jpg";
 import { ArrowRight } from "lucide-react";
 
@@ -5,7 +6,6 @@ export function AboutPreview() {
   return (
     <section className="bg-cream px-5 py-16 text-chai sm:px-8 sm:py-20 lg:px-12 lg:py-24">
       <div className="mx-auto grid max-w-7xl items-center gap-10 sm:gap-12 md:grid-cols-2 md:gap-14">
-
         {/* Content */}
         <div>
           <div className="flex flex-wrap items-center gap-2">
@@ -39,6 +39,7 @@ export function AboutPreview() {
             className="mt-7 inline-flex items-center gap-2 rounded-full bg-chai px-6 py-3 text-sm font-semibold text-cream transition-all duration-300 hover:bg-terracotta"
           >
             Discover Our Story
+
             <ArrowRight
               size={16}
               className="transition-transform duration-300 group-hover:translate-x-1"
@@ -52,13 +53,14 @@ export function AboutPreview() {
             src={aboutShop}
             alt="Janta Tea Company tea shop"
             loading="lazy"
+            decoding="async"
             width={1200}
             height={900}
             className="h-auto w-full object-cover transition-transform duration-700 hover:scale-[1.03]"
           />
         </div>
-
       </div>
     </section>
   );
 }
+

@@ -1,3 +1,4 @@
+
 import { ArrowRight } from "lucide-react";
 import giftBox from "@/assets/gift-box.jpg";
 import wholesale from "@/assets/wholesale.jpg";
@@ -6,7 +7,6 @@ export function WholeSalePreview() {
   return (
     <section className="px-6 py-20 lg:py-24">
       <div className="mx-auto max-w-7xl">
-
         {/* Section Heading */}
         <div className="mb-10 flex flex-col justify-between gap-5 md:flex-row md:items-end">
           <div>
@@ -27,12 +27,15 @@ export function WholeSalePreview() {
 
         {/* Cards */}
         <div className="grid gap-6 md:grid-cols-2">
-
           {/* Gifting */}
           <article className="group relative min-h-[360px] overflow-hidden rounded-3xl">
             <img
               src={giftBox}
               alt="Tea gift boxes"
+              loading="lazy"
+              decoding="async"
+              width={1200}
+              height={800}
               className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
             />
 
@@ -70,6 +73,10 @@ export function WholeSalePreview() {
             <img
               src={wholesale}
               alt="Wholesale tea supply"
+              loading="lazy"
+              decoding="async"
+              width={1200}
+              height={800}
               className="absolute inset-0 h-full w-full object-cover transition-transform duration-700 group-hover:scale-105"
             />
 
@@ -101,9 +108,9 @@ export function WholeSalePreview() {
               </a>
             </div>
           </article>
-
         </div>
       </div>
     </section>
   );
 }
+

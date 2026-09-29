@@ -53,21 +53,20 @@ export function ProductCard({
   const handleAdd = () => {
     if (!slug) {
       toast.error("Product information is incomplete.");
-    return;
-  }
+      return;
+    }
 
-  add({
-    name,
-    slug,
-    price,
-    priceValue: priceValue ?? parsePrice(price),
-    image,
-  });
-
+    add({
+      name,
+      slug,
+      price,
+      priceValue: priceValue ?? parsePrice(price),
+      image,
+    });
 
     setAdded(true);
 
-    toast.success(`${name} `, {
+    toast.success(`${name}`, {
       action: {
         label: "added successfully",
         onClick: () => setOpen(true),
@@ -82,6 +81,7 @@ export function ProductCard({
       src={image}
       alt={`${name} — loose leaf tea from Janta Tea Company`}
       loading="lazy"
+      decoding="async"
       width={400}
       height={500}
       className="h-full w-full object-contain p-5 mix-blend-multiply transition-transform duration-700 group-hover:scale-[1.04] sm:p-6"
@@ -90,10 +90,8 @@ export function ProductCard({
 
   return (
     <article className="group relative flex h-full flex-col overflow-hidden rounded-2xl border border-border bg-card transition-all duration-500 hover:-translate-y-1 hover:shadow-warm">
-
       {/* Product Image */}
-     <div className="relative flex h-[280px] items-center justify-center overflow-hidden bg-[#F7F3EA] sm:h-[320px]">
-
+      <div className="relative flex h-[280px] items-center justify-center overflow-hidden bg-[#F7F3EA] sm:h-[320px]">
         {/* Badge */}
         {badge && (
           <span className="absolute left-4 top-4 z-10 rounded-full bg-chai px-3 py-1.5 text-[10px] font-semibold uppercase tracking-widest text-cream shadow-sm">
@@ -114,12 +112,10 @@ export function ProductCard({
         ) : (
           <Img />
         )}
-
       </div>
 
       {/* Product Information */}
-     <div className="flex flex-1 flex-col p-4">
-
+      <div className="flex flex-1 flex-col p-4">
         {/* Rating */}
         <div className="flex items-center gap-2">
           <Stars rating={rating} />
@@ -164,7 +160,6 @@ export function ProductCard({
 
         {/* Actions */}
         <div className="mt-5 flex flex-col gap-2">
-
           {/* Add To Cart */}
           <button
             onClick={handleAdd}
@@ -182,9 +177,9 @@ export function ProductCard({
           >
             Order on WhatsApp
           </a>
-
         </div>
       </div>
     </article>
   );
 }
+
