@@ -7,13 +7,41 @@ const description =
 export const Route = createFileRoute("/")({
   head: () => ({
     meta: [
-      { title },
-      { name: "description", content: description },
-      { property: "og:title", content: title },
-      { property: "og:description", content: description },
-      { property: "og:type", content: "website" },
-      { name: "twitter:card", content: "summary_large_image" },
-    ],
+  {
+    title: "Janta Tea Company | Fresh Tea & Wholesale Dealer in Indore",
+  },
+  {
+    name: "description",
+    content:
+      "Buy fresh Assam, Darjeeling, masala, green and cardamom tea from Janta Tea Company, Siyaganj, Indore. Retail and wholesale tea since 1974.",
+  },
+  {
+    property: "og:title",
+    content:
+      "Janta Tea Company | Fresh Tea & Wholesale Dealer in Indore",
+  },
+  {
+    property: "og:description",
+    content:
+      "Buy fresh Assam, Darjeeling, masala, green and cardamom tea from Janta Tea Company, Siyaganj, Indore.",
+  },
+  {
+    property: "og:type",
+    content: "website",
+  },
+  {
+  property: "og:image",
+  content: "/favicon.png",
+},
+{
+  name: "twitter:image",
+  content: "/favicon.png",
+},
+  {
+    name: "twitter:card",
+    content: "summary_large_image",
+  },
+],
     scripts: [
       {
         type: "application/ld+json",

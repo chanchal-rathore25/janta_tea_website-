@@ -23,15 +23,10 @@ function NotFoundComponent() {
   return (
     <div className="min-h-screen flex flex-col items-center justify-center">
       <h1 className="text-6xl font-bold">404</h1>
-
-      <p className="mt-4 text-xl">
-        Page not found
-      </p>
-
+      <p className="mt-4 text-xl">Page not found</p>
       <p className="mt-2 text-muted-foreground">
         The page you're looking for doesn't exist or has been moved.
       </p>
-
       <Link
         to="/"
         className="mt-6 inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-medium text-primary-foreground transition-colors hover:bg-primary/90"
@@ -61,15 +56,10 @@ function ErrorComponent({
 
   return (
     <div className="min-h-screen flex flex-col items-center justify-center px-6 text-center">
-      <h1 className="text-4xl font-bold">
-        This page didn't load
-      </h1>
-
+      <h1 className="text-4xl font-bold">This page didn't load</h1>
       <p className="mt-4 text-muted-foreground">
-        Something went wrong on our end. You can try refreshing
-        or head back home.
+        Something went wrong on our end. You can try refreshing or head back home.
       </p>
-
       <div className="mt-6 flex gap-3">
         <button
           onClick={() => {
@@ -80,7 +70,6 @@ function ErrorComponent({
         >
           Try again
         </button>
-
         <Link
           to="/"
           className="inline-flex items-center justify-center rounded-md border px-4 py-2 text-sm font-medium transition-colors hover:bg-muted"
@@ -98,20 +87,19 @@ export const Route =
   }>()({
     head: () => ({
       meta: [
-        {
-          charSet: "utf-8",
-        },
+        { charSet: "utf-8" },
         {
           name: "viewport",
           content: "width=device-width, initial-scale=1",
         },
         {
-          title: "Janta Tea Company",
+          title:
+            "Janta Tea Company | Fresh Tea & Wholesale Dealer in Indore",
         },
         {
           name: "description",
           content:
-            "Estate-grown Indian chai and loose leaf tea.",
+            "Buy fresh Assam, Darjeeling, masala, green and cardamom tea from Janta Tea Company, Siyaganj, Indore. Retail and wholesale tea since 1974.",
         },
         {
           name: "author",
@@ -119,12 +107,13 @@ export const Route =
         },
         {
           property: "og:title",
-          content: "Janta Tea Company",
+          content:
+            "Janta Tea Company | Fresh Tea & Wholesale Dealer in Indore",
         },
         {
           property: "og:description",
           content:
-            "Estate-grown Indian chai and loose leaf tea.",
+            "Buy fresh Assam, Darjeeling, masala, green and cardamom tea from Janta Tea Company, Siyaganj, Indore.",
         },
         {
           property: "og:type",
@@ -141,27 +130,23 @@ export const Route =
           rel: "stylesheet",
           href: appCss,
         },
-
         {
           rel: "preconnect",
           href: "https://fonts.googleapis.com",
         },
-
         {
           rel: "preconnect",
           href: "https://fonts.gstatic.com",
           crossOrigin: "anonymous",
         },
-
         {
           rel: "stylesheet",
           href: "https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,400;9..144,500;9..144,600&family=Inter:wght@300;400;500;600&display=swap",
         },
-
         {
           rel: "icon",
-          href: "jantateaLogo",
-          type: "image/x-icon",
+          href: "/favicon.png",
+          type: "image/png",
         },
       ],
     }),
@@ -172,23 +157,15 @@ export const Route =
     errorComponent: ErrorComponent,
   });
 
-function RootShell({
-  children,
-}: {
-  children: ReactNode;
-}) {
+function RootShell({ children }: { children: ReactNode }) {
   return (
     <html lang="en">
       <head>
         <HeadContent />
-
-        {/* Razorpay Checkout Script */}
         <script src="https://checkout.razorpay.com/v1/checkout.js" />
       </head>
-
       <body>
         {children}
-
         <Scripts />
       </body>
     </html>
@@ -204,11 +181,8 @@ function RootComponent() {
         <CartProvider>
           <AuthUiProvider>
             <Outlet />
-
             <CartDrawer />
-
             <AuthModal />
-
             <Toaster />
           </AuthUiProvider>
         </CartProvider>
