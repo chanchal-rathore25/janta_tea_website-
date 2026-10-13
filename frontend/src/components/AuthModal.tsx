@@ -26,14 +26,9 @@ export function AuthModal() {
 
   const [mode, setMode] = useState<Mode>("login");
   const [loading, setLoading] = useState(false);
+  const [form, setForm] = useState<FormState>(initialForm);
 
-  const [form, setForm] =
-    useState<FormState>(initialForm);
-
-  /* =====================================================
-     RESET MODAL WHEN CLOSED
-  ===================================================== */
-
+  // Reset modal when closed
   useEffect(() => {
     if (!open) {
       setMode("login");
@@ -42,10 +37,7 @@ export function AuthModal() {
     }
   }, [open]);
 
-  /* =====================================================
-     FORM FIELD UPDATE
-  ===================================================== */
-
+  // Update form fields
   const updateField =
     (field: keyof FormState) =>
     (event: ChangeEvent<HTMLInputElement>) => {
@@ -55,28 +47,18 @@ export function AuthModal() {
       }));
     };
 
-  /* =====================================================
-     RESET FORM
-  ===================================================== */
-
+  // Reset form
   const resetForm = () => {
     setForm(initialForm);
   };
 
-  /* =====================================================
-     CLOSE MODAL
-  ===================================================== */
-
+  // Close modal
   const closeModal = () => {
     if (loading) return;
-
     setOpen(false);
   };
 
-  /* =====================================================
-     LOGIN
-  ===================================================== */
-
+  // Login
   const handleLogin = async () => {
     const email = form.email.trim().toLowerCase();
     const password = form.password;
@@ -91,37 +73,20 @@ export function AuthModal() {
       return;
     }
 
-    const { data, error } =
-      await supabase.auth.signInWithPassword({
-        email,
-        password,
-      });
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    });
 
     if (error) {
-      console.error(
-        "Supabase login error:",
-        error,
-      );
+      console.error("Supabase login error:", error);
 
-      const message =
-        error.message.toLowerCase();
+      const message = error.message.toLowerCase();
 
-      if (
-        message.includes(
-          "invalid login credentials",
-        )
-      ) {
-        toast.error(
-          "Invalid email or password.",
-        );
-      } else if (
-        message.includes(
-          "email not confirmed",
-        )
-      ) {
-        toast.error(
-          "Please confirm your email before logging in.",
-        );
+      if (message.includes("invalid login credentials")) {
+        toast.error("Invalid email or password.");
+      } else if (message.includes("email not confirmed")) {
+        toast.error("Please confirm your email before logging in.");
       } else {
         toast.error(error.message);
       }
@@ -130,9 +95,7 @@ export function AuthModal() {
     }
 
     if (!data.session) {
-      toast.error(
-        "Login session could not be created.",
-      );
+      toast.error("Login session could not be created.");
       return;
     }
 
@@ -143,10 +106,7 @@ export function AuthModal() {
     setOpen(false);
   };
 
-  /* =====================================================
-     SIGNUP
-  ===================================================== */
-
+  // Signup
   const handleSignup = async () => {
     const name = form.name.trim();
     const phone = form.phone.trim();
@@ -159,74 +119,51 @@ export function AuthModal() {
     }
 
     if (name.length < 2) {
-      toast.error(
-        "Please enter a valid name.",
-      );
+      toast.error("Please enter a valid name.");
       return;
     }
 
     if (!phone) {
-      toast.error(
-        "Please enter your mobile number.",
-      );
+      toast.error("Please enter your mobile number.");
       return;
     }
 
-    const cleanPhone =
-      phone.replace(/\D/g, "");
+    const cleanPhone = phone.replace(/\D/g, "");
 
-    if (
-      cleanPhone.length < 10 ||
-      cleanPhone.length > 15
-    ) {
-      toast.error(
-        "Please enter a valid mobile number.",
-      );
+    if (cleanPhone.length < 10 || cleanPhone.length > 15) {
+      toast.error("Please enter a valid mobile number.");
       return;
     }
 
     if (!email) {
-      toast.error(
-        "Please enter your email address.",
-      );
+      toast.error("Please enter your email address.");
       return;
     }
 
     if (password.length < 6) {
-      toast.error(
-        "Password must contain at least 6 characters.",
-      );
+      toast.error("Password must contain at least 6 characters.");
       return;
     }
 
-    const { data, error } =
-      await supabase.auth.signUp({
-        email,
-        password,
-        options: {
-          data: {
-            full_name: name,
-            phone: cleanPhone,
-          },
+    const { data, error } = await supabase.auth.signUp({
+      email,
+      password,
+      options: {
+        data: {
+          full_name: name,
+          phone: cleanPhone,
         },
-      });
+      },
+    });
 
     if (error) {
-      console.error(
-        "Supabase signup error:",
-        error,
-      );
+      console.error("Supabase signup error:", error);
 
-      const message =
-        error.message.toLowerCase();
+      const message = error.message.toLowerCase();
 
-      if (
-        message.includes(
-          "user already registered",
-        )
-      ) {
+      if (message.includes("user already registered")) {
         toast.error(
-          "An account with this email already exists. Please login.",
+          "An account with this email already exists. Please login."
         );
       } else {
         toast.error(error.message);
@@ -235,15 +172,8 @@ export function AuthModal() {
       return;
     }
 
-    /*
-      If email confirmation is disabled,
-      Supabase normally returns a session.
-    */
-
     if (data.session) {
-      toast.success(
-        "Account created successfully!",
-      );
+      toast.success("Account created successfully!");
 
       resetForm();
       setMode("login");
@@ -252,14 +182,9 @@ export function AuthModal() {
       return;
     }
 
-    /*
-      If email confirmation is enabled,
-      there may be a user but no session.
-    */
-
     if (data.user) {
       toast.success(
-        "Account created! Please check your email to confirm your account.",
+        "Account created! Please check your email to confirm your account."
       );
 
       resetForm();
@@ -268,60 +193,36 @@ export function AuthModal() {
       return;
     }
 
-    toast.error(
-      "Account could not be created.",
-    );
+    toast.error("Account could not be created.");
   };
 
-  /* =====================================================
-     FORGOT PASSWORD
-  ===================================================== */
-
+  // Forgot password
   const handleForgotPassword = async () => {
-    const email =
-      form.email.trim().toLowerCase();
+    const email = form.email.trim().toLowerCase();
 
     if (!email) {
-      toast.error(
-        "Please enter your email address.",
-      );
+      toast.error("Please enter your email address.");
       return;
     }
 
-    const { error } =
-      await supabase.auth.resetPasswordForEmail(
-        email,
-        {
-          redirectTo:
-            `${window.location.origin}/reset-password`,
-        },
-      );
+    const { error } = await supabase.auth.resetPasswordForEmail(email, {
+      redirectTo: `${window.location.origin}/reset-password`,
+    });
 
     if (error) {
-      console.error(
-        "Password reset error:",
-        error,
-      );
-
+      console.error("Password reset error:", error);
       toast.error(error.message);
       return;
     }
 
-    toast.success(
-      "Password reset link has been sent to your email.",
-    );
+    toast.success("Password reset link has been sent to your email.");
 
     resetForm();
     setMode("login");
   };
 
-  /* =====================================================
-     FORM SUBMIT
-  ===================================================== */
-
-  const handleSubmit = async (
-    event: FormEvent<HTMLFormElement>,
-  ) => {
+  // Form submit
+  const handleSubmit = async (event: FormEvent<HTMLFormElement>) => {
     event.preventDefault();
 
     if (loading) return;
@@ -337,71 +238,20 @@ export function AuthModal() {
         await handleForgotPassword();
       }
     } catch (error) {
-      console.error(
-        "Authentication error:",
-        error,
-      );
+      console.error("Authentication error:", error);
 
       toast.error(
         error instanceof Error
           ? error.message
-          : "Something went wrong. Please try again.",
+          : "Something went wrong. Please try again."
       );
     } finally {
       setLoading(false);
     }
   };
 
-  /* =====================================================
-     GOOGLE LOGIN
-  ===================================================== */
-
-  const handleGoogleLogin = async () => {
-    if (loading) return;
-
-    setLoading(true);
-
-    try {
-      const { error } =
-        await supabase.auth.signInWithOAuth({
-          provider: "google",
-          options: {
-            redirectTo:
-              window.location.origin,
-          },
-        });
-
-      if (error) {
-        console.error(
-          "Google login error:",
-          error,
-        );
-
-        toast.error(error.message);
-      }
-    } catch (error) {
-      console.error(
-        "Google OAuth error:",
-        error,
-      );
-
-      toast.error(
-        error instanceof Error
-          ? error.message
-          : "Google login failed.",
-      );
-    } finally {
-      setLoading(false);
-    }
-  };
-
-  /* =====================================================
-     SWITCH LOGIN / SIGNUP
-  ===================================================== */
-
-  const switchMode = (
-    nextMode: "login" | "signup",
-  ) => {
+  // Switch between login and signup
+  const switchMode = (nextMode: "login" | "signup") => {
     if (loading) return;
 
     setMode(nextMode);
@@ -412,10 +262,7 @@ export function AuthModal() {
     }));
   };
 
-  /* =====================================================
-     UI
-  ===================================================== */
-
+  // Modal UI
   if (!open) return null;
 
   const title =
@@ -435,15 +282,12 @@ export function AuthModal() {
     >
       <div
         className="w-full max-w-md rounded-3xl border border-border bg-card p-8 shadow-warm"
-        onClick={(event) =>
-          event.stopPropagation()
-        }
+        onClick={(event) => event.stopPropagation()}
         role="dialog"
         aria-modal="true"
         aria-labelledby="auth-modal-title"
       >
-        {/* HEADER */}
-
+        {/* Header */}
         <div className="flex items-start justify-between gap-4">
           <div>
             <span className="label-eyebrow text-cardamom">
@@ -469,37 +313,9 @@ export function AuthModal() {
           </button>
         </div>
 
-        {/* GOOGLE LOGIN */}
-
-        {mode !== "forgot" && (
-          <>
-            <button
-              type="button"
-              onClick={handleGoogleLogin}
-              disabled={loading}
-              className="mt-6 w-full rounded-full border border-border bg-cream py-3 text-sm font-medium transition-colors hover:border-terracotta disabled:cursor-not-allowed disabled:opacity-50"
-            >
-              {loading
-                ? "Please wait..."
-                : "Continue with Google"}
-            </button>
-
-            <div className="my-4 flex items-center gap-3 text-[11px] uppercase tracking-widest text-chai/40">
-              <span className="h-px flex-1 bg-border" />
-              <span>or</span>
-              <span className="h-px flex-1 bg-border" />
-            </div>
-          </>
-        )}
-
-        {/* FORM */}
-
-        <form
-          onSubmit={handleSubmit}
-          className="space-y-3"
-        >
-          {/* SIGNUP FIELDS */}
-
+        {/* Form */}
+        <form onSubmit={handleSubmit} className="mt-6 space-y-3">
+          {/* Signup fields */}
           {mode === "signup" && (
             <>
               <input
@@ -527,8 +343,7 @@ export function AuthModal() {
             </>
           )}
 
-          {/* EMAIL */}
-
+          {/* Email */}
           <input
             required
             disabled={loading}
@@ -540,8 +355,7 @@ export function AuthModal() {
             className={inputClass}
           />
 
-          {/* PASSWORD */}
-
+          {/* Password */}
           {mode !== "forgot" && (
             <input
               required
@@ -552,16 +366,13 @@ export function AuthModal() {
               placeholder="Password"
               minLength={6}
               autoComplete={
-                mode === "signup"
-                  ? "new-password"
-                  : "current-password"
+                mode === "signup" ? "new-password" : "current-password"
               }
               className={inputClass}
             />
           )}
 
-          {/* SUBMIT */}
-
+          {/* Submit */}
           <button
             type="submit"
             disabled={loading}
@@ -577,8 +388,7 @@ export function AuthModal() {
           </button>
         </form>
 
-        {/* FORGOT PASSWORD */}
-
+        {/* Forgot password */}
         {mode === "login" && (
           <button
             type="button"
@@ -586,6 +396,7 @@ export function AuthModal() {
               if (loading) return;
 
               setMode("forgot");
+
               setForm((previous) => ({
                 ...previous,
                 password: "",
@@ -598,8 +409,7 @@ export function AuthModal() {
           </button>
         )}
 
-        {/* LOGIN / SIGNUP SWITCH */}
-
+        {/* Login / Signup switch */}
         {mode !== "forgot" && (
           <p className="mt-5 text-center text-sm text-chai/60">
             {mode === "signup"
@@ -609,30 +419,23 @@ export function AuthModal() {
             <button
               type="button"
               onClick={() =>
-                switchMode(
-                  mode === "signup"
-                    ? "login"
-                    : "signup",
-                )
+                switchMode(mode === "signup" ? "login" : "signup")
               }
               disabled={loading}
               className="font-semibold text-terracotta hover:underline disabled:opacity-50"
             >
-              {mode === "signup"
-                ? "Login"
-                : "Sign up"}
+              {mode === "signup" ? "Login" : "Sign up"}
             </button>
           </p>
         )}
 
-        {/* BACK TO LOGIN */}
-
+        {/* Back to login */}
         {mode === "forgot" && (
           <button
             type="button"
             onClick={() => switchMode("login")}
             disabled={loading}
-            className="mt-5 w-full text-center text-sm font-semibold text-terracotta hover:underline disabled:opacity-50"
+            className="mt-5 w-full text-center text-sm font-semibold text-terracotta hover:underline"
           >
             ← Back to Login
           </button>
