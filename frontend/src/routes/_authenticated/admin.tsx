@@ -8,7 +8,12 @@ import { Navbar } from "@/components/Navbar";
 import { Footer } from "@/components/Footer";
 import { useAuth } from "@/hooks/useAuth";
 import { supabase } from "@/integrations/supabase/client";
-import { catalogQuery, productImage, type DbProduct } from "@/lib/catalog";
+import {
+  catalogQuery,
+  productImage,
+  type DbProduct,
+} from "@/lib/catalog";
+
 import {
   adminDeleteProduct,
   adminListOrders,
@@ -57,10 +62,13 @@ const statuses = [
 
 function AdminPage() {
   const { isAdmin, loading } = useAuth();
+
   const qc = useQueryClient();
+
   const [tab, setTab] = useState<"orders" | "products">("orders");
   const [form, setForm] = useState({ ...emptyProduct });
   const [uploading, setUploading] = useState(false);
+  const [updatingOrderId, setUpdatingOrderId] = useState<string | null>(null);
 
   const fetchStats = useServerFn(adminStats);
   const fetchOrders = useServerFn(adminListOrders);
@@ -111,29 +119,76 @@ function AdminPage() {
   const handleUpload = async (file: File) => {
     setUploading(true);
 
-    const ext = file.name.split(".").pop() ?? "jpg";
-    const path = `${form.slug || "product"}-${Date.now()}.${ext}`;
+    try {
+      const ext = file.name.split(".").pop() ?? "jpg";
+      const path = `${form.slug || "product"}-${Date.now()}.${ext}`;
 
-    const { error } = await supabase.storage
-      .from("product-images")
-      .upload(path, file, {
-        cacheControl: "31536000",
-        upsert: true,
+      const { error } = await supabase.storage
+        .from("product-images")
+        .upload(path, file, {
+          cacheControl: "31536000",
+          upsert: true,
+        });
+
+      if (error) {
+        throw new Error(error.message);
+      }
+
+      setForm((current) => ({
+        ...current,
+        image_url: path,
+      }));
+
+      toast.success("Image uploaded successfully");
+    } catch (error) {
+      toast.error(
+        error instanceof Error ? error.message : "Image upload failed",
+      );
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const handleStatusChange = async (
+    orderId: string,
+    newStatus: (typeof statuses)[number],
+  ) => {
+    setUpdatingOrderId(orderId);
+
+    try {
+      const result = await updateStatus({
+        data: {
+          id: orderId,
+          status: newStatus,
+        },
       });
 
-    setUploading(false);
+      console.log("Order status update response:", result);
 
-    if (error) {
-      toast.error(error.message);
-      return;
+      await qc.invalidateQueries({
+        queryKey: ["admin-orders"],
+      });
+
+      await qc.invalidateQueries({
+        queryKey: ["admin-stats"],
+      });
+
+      toast.success(`Order status updated to ${newStatus}`);
+    } catch (error) {
+      console.error("Order status update failed:", error);
+
+      toast.error(
+        error instanceof Error
+          ? error.message
+          : "Failed to update order status",
+      );
+
+      await qc.invalidateQueries({
+        queryKey: ["admin-orders"],
+      });
+    } finally {
+      setUpdatingOrderId(null);
     }
-
-    setForm((f) => ({
-      ...f,
-      image_url: path,
-    }));
-
-    toast.success("Image uploaded successfully");
   };
 
   return (
@@ -145,7 +200,35 @@ function AdminPage() {
 
         <h1 className="mt-3 font-display text-5xl">Dashboard</h1>
 
-        <div className="mt-8 grid gap-4 sm:grid-cols-4">
+        {(stats.isError || orders.isError) && (
+          <div className="mt-6 rounded-2xl border border-red-300 bg-red-50 p-5 text-red-700">
+            <h2 className="font-semibold">Dashboard data error</h2>
+
+            {stats.isError && (
+              <p className="mt-2 text-sm">
+                Stats: {stats.error.message}
+              </p>
+            )}
+
+            {orders.isError && (
+              <p className="mt-2 text-sm">
+                Orders: {orders.error.message}
+              </p>
+            )}
+
+            <button
+              onClick={() => {
+                void stats.refetch();
+                void orders.refetch();
+              }}
+              className="mt-4 rounded-full bg-red-700 px-5 py-2 text-sm text-white"
+            >
+              Retry
+            </button>
+          </div>
+        )}
+
+        <div className="mt-8 grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
           {[
             {
               label: "Total Orders",
@@ -163,30 +246,32 @@ function AdminPage() {
               label: "Products",
               value: stats.data?.productCount ?? 0,
             },
-          ].map((s) => (
+          ].map((item) => (
             <div
-              key={s.label}
+              key={item.label}
               className="rounded-3xl border border-border bg-card p-5"
             >
               <p className="text-[11px] tracking-widest text-chai/45 uppercase">
-                {s.label}
+                {item.label}
               </p>
 
-              <p className="mt-2 font-display text-3xl">{s.value}</p>
+              <p className="mt-2 font-display text-3xl">{item.value}</p>
             </div>
           ))}
         </div>
 
         <div className="mt-10 flex gap-2">
-          {(["orders", "products"] as const).map((t) => (
+          {(["orders", "products"] as const).map((currentTab) => (
             <button
-              key={t}
-              onClick={() => setTab(t)}
+              key={currentTab}
+              onClick={() => setTab(currentTab)}
               className={`rounded-full px-6 py-3 text-[11px] font-semibold tracking-widest uppercase ${
-                tab === t ? "bg-chai text-cream" : "border border-border"
+                tab === currentTab
+                  ? "bg-chai text-cream"
+                  : "border border-border"
               }`}
             >
-              {t}
+              {currentTab}
             </button>
           ))}
         </div>
@@ -211,36 +296,48 @@ function AdminPage() {
 
                     <p className="mt-1 text-xs text-chai/45">
                       {new Date(order.created_at).toLocaleString("en-IN")} ·{" "}
-                      {order.payment_method.toUpperCase()} · payment{" "}
+                      {order.payment_method.toUpperCase()} · Payment{" "}
                       {order.payment_status}
+                    </p>
+
+                    <p className="mt-2 text-xs text-chai/60">
+                      Order ID: {order.id}
                     </p>
                   </div>
 
-                  <select
-                    value={order.status}
-                    onChange={async (e) => {
-                      await updateStatus({
-                        data: {
-                          id: order.id,
-                          status: e.target.value as (typeof statuses)[number],
-                          payment_status: order.payment_status as "pending",
-                        },
-                      });
+                  <div className="flex flex-col gap-2">
+                    <label
+                      htmlFor={`status-${order.id}`}
+                      className="text-xs text-chai/60"
+                    >
+                      Order Status
+                    </label>
 
-                      toast.success("Status updated successfully");
+                    <select
+                      id={`status-${order.id}`}
+                      value={order.status}
+                      disabled={updatingOrderId === order.id}
+                      onChange={(event) => {
+                        void handleStatusChange(
+                          order.id,
+                          event.target.value as (typeof statuses)[number],
+                        );
+                      }}
+                      className="rounded-full border border-border bg-cream px-4 py-2 text-xs disabled:cursor-wait disabled:opacity-50"
+                    >
+                      {statuses.map((status) => (
+                        <option key={status} value={status}>
+                          {status}
+                        </option>
+                      ))}
+                    </select>
 
-                      void qc.invalidateQueries({
-                        queryKey: ["admin-orders"],
-                      });
-                    }}
-                    className="rounded-full border border-border bg-cream px-4 py-2 text-xs"
-                  >
-                    {statuses.map((s) => (
-                      <option key={s} value={s}>
-                        {s}
-                      </option>
-                    ))}
-                  </select>
+                    {updatingOrderId === order.id && (
+                      <p className="text-xs text-chai/60">
+                        Updating status...
+                      </p>
+                    )}
+                  </div>
                 </div>
 
                 <ul className="mt-4 space-y-1 border-t border-border pt-4 text-sm text-chai/70">
@@ -262,7 +359,11 @@ function AdminPage() {
               </article>
             ))}
 
-            {(orders.data ?? []).length === 0 && (
+            {orders.isLoading && (
+              <p className="text-sm text-chai/60">Loading orders...</p>
+            )}
+
+            {!orders.isLoading && (orders.data ?? []).length === 0 && (
               <p className="text-sm text-chai/60">
                 No orders have been placed yet.
               </p>
@@ -274,8 +375,8 @@ function AdminPage() {
           <div className="mt-6 grid gap-8 lg:grid-cols-[0.9fr_1.1fr]">
             <form
               className="h-fit space-y-3 rounded-3xl border border-border bg-card p-6"
-              onSubmit={async (e) => {
-                e.preventDefault();
+              onSubmit={async (event) => {
+                event.preventDefault();
 
                 try {
                   await saveProduct({
@@ -297,18 +398,18 @@ function AdminPage() {
 
                   setForm({ ...emptyProduct });
 
-                  void qc.invalidateQueries({
+                  await qc.invalidateQueries({
                     queryKey: ["catalog"],
                   });
 
-                  void qc.invalidateQueries({
+                  await qc.invalidateQueries({
                     queryKey: ["admin-stats"],
                   });
-                } catch (err) {
+                } catch (error) {
                   toast.error(
-                    err instanceof Error
-                      ? err.message
-                      : "Failed to save product"
+                    error instanceof Error
+                      ? error.message
+                      : "Failed to save product",
                   );
                 }
               }}
@@ -320,10 +421,10 @@ function AdminPage() {
               <input
                 required
                 value={form.slug}
-                onChange={(e) =>
+                onChange={(event) =>
                   setForm({
                     ...form,
-                    slug: e.target.value,
+                    slug: event.target.value,
                   })
                 }
                 placeholder="Slug (e.g. masala-chai-special)"
@@ -333,10 +434,10 @@ function AdminPage() {
               <input
                 required
                 value={form.name}
-                onChange={(e) =>
+                onChange={(event) =>
                   setForm({
                     ...form,
-                    name: e.target.value,
+                    name: event.target.value,
                   })
                 }
                 placeholder="Product Name"
@@ -345,27 +446,27 @@ function AdminPage() {
 
               <select
                 value={form.category_slug}
-                onChange={(e) =>
+                onChange={(event) =>
                   setForm({
                     ...form,
-                    category_slug: e.target.value,
+                    category_slug: event.target.value,
                   })
                 }
                 className={input}
               >
-                {(catalog.data?.categories ?? []).map((c) => (
-                  <option key={c.slug} value={c.slug}>
-                    {c.name}
+                {(catalog.data?.categories ?? []).map((category) => (
+                  <option key={category.slug} value={category.slug}>
+                    {category.name}
                   </option>
                 ))}
               </select>
 
               <textarea
                 value={form.notes}
-                onChange={(e) =>
+                onChange={(event) =>
                   setForm({
                     ...form,
-                    notes: e.target.value,
+                    notes: event.target.value,
                   })
                 }
                 placeholder="Description"
@@ -377,11 +478,12 @@ function AdminPage() {
                 <input
                   required
                   type="number"
+                  min="0"
                   value={form.price_value}
-                  onChange={(e) =>
+                  onChange={(event) =>
                     setForm({
                       ...form,
-                      price_value: Number(e.target.value),
+                      price_value: Number(event.target.value),
                     })
                   }
                   placeholder="Price"
@@ -389,11 +491,12 @@ function AdminPage() {
                 />
 
                 <input
+                  required
                   value={form.unit}
-                  onChange={(e) =>
+                  onChange={(event) =>
                     setForm({
                       ...form,
-                      unit: e.target.value,
+                      unit: event.target.value,
                     })
                   }
                   placeholder="Unit"
@@ -402,11 +505,12 @@ function AdminPage() {
 
                 <input
                   type="number"
+                  min="0"
                   value={form.mrp}
-                  onChange={(e) =>
+                  onChange={(event) =>
                     setForm({
                       ...form,
-                      mrp: Number(e.target.value),
+                      mrp: Number(event.target.value),
                     })
                   }
                   placeholder="MRP"
@@ -416,10 +520,10 @@ function AdminPage() {
 
               <input
                 value={form.badge}
-                onChange={(e) =>
+                onChange={(event) =>
                   setForm({
                     ...form,
-                    badge: e.target.value,
+                    badge: event.target.value,
                   })
                 }
                 placeholder="Badge (optional)"
@@ -434,8 +538,8 @@ function AdminPage() {
                 <input
                   type="file"
                   accept="image/*"
-                  onChange={(e) => {
-                    const file = e.target.files?.[0];
+                  onChange={(event) => {
+                    const file = event.target.files?.[0];
 
                     if (file) {
                       void handleUpload(file);
@@ -457,7 +561,7 @@ function AdminPage() {
                       category_slug: form.category_slug,
                       image_url: form.image_url,
                     })}
-                    alt="Preview"
+                    alt="Product preview"
                     className="mt-3 h-24 w-24 rounded-xl object-cover"
                   />
                 )}
@@ -465,48 +569,51 @@ function AdminPage() {
 
               <button
                 type="submit"
-                className="w-full rounded-full bg-chai py-3 text-[11px] font-semibold tracking-widest text-cream uppercase hover:bg-terracotta"
+                disabled={uploading}
+                className="w-full rounded-full bg-chai py-3 text-[11px] font-semibold tracking-widest text-cream uppercase hover:bg-terracotta disabled:opacity-50"
               >
                 Save Product
               </button>
             </form>
 
             <div className="space-y-3">
-              {(catalog.data?.products ?? []).map((p: DbProduct) => (
+              {(catalog.data?.products ?? []).map((product: DbProduct) => (
                 <div
-                  key={p.slug}
+                  key={product.slug}
                   className="flex items-center gap-4 rounded-2xl border border-border bg-card p-4"
                 >
                   <img
-                    src={productImage(p)}
-                    alt={p.name}
+                    src={productImage(product)}
+                    alt={product.name}
                     className="h-14 w-14 rounded-xl object-cover"
                   />
 
                   <div className="flex-1">
-                    <p className="text-sm font-semibold">
-                      {p.name}
+                    <p className="text-sm font-semibold">{product.name}</p>
+
+                    <p className="text-xs text-chai/50">
+                      ₹{Number(product.price_value)} / {product.unit} ·{" "}
+                      {product.category_slug}
                     </p>
 
                     <p className="text-xs text-chai/50">
-                      ₹{Number(p.price_value)} / {p.unit} ·{" "}
-                      {p.category_slug}
+                      {product.in_stock ? "In stock" : "Out of stock"}
                     </p>
                   </div>
 
                   <button
                     onClick={() =>
                       setForm({
-                        slug: p.slug,
-                        name: p.name,
-                        category_slug: p.category_slug,
-                        notes: p.notes ?? "",
-                        price_value: Number(p.price_value),
-                        unit: p.unit,
-                        mrp: Number(p.mrp ?? 0),
-                        image_url: p.image_url ?? "",
-                        badge: p.badge ?? "",
-                        in_stock: p.in_stock,
+                        slug: product.slug,
+                        name: product.name,
+                        category_slug: product.category_slug,
+                        notes: product.notes ?? "",
+                        price_value: Number(product.price_value),
+                        unit: product.unit,
+                        mrp: Number(product.mrp ?? 0),
+                        image_url: product.image_url ?? "",
+                        badge: product.badge ?? "",
+                        in_stock: product.in_stock,
                       })
                     }
                     className="rounded-full border border-border px-4 py-2 text-[11px] uppercase hover:border-chai"
@@ -516,17 +623,35 @@ function AdminPage() {
 
                   <button
                     onClick={async () => {
-                      await deleteProduct({
-                        data: {
-                          slug: p.slug,
-                        },
-                      });
+                      const confirmed = window.confirm(
+                        `Delete "${product.name}"? This action cannot be undone.`,
+                      );
 
-                      toast.success("Product deleted successfully");
+                      if (!confirmed) return;
 
-                      void qc.invalidateQueries({
-                        queryKey: ["catalog"],
-                      });
+                      try {
+                        await deleteProduct({
+                          data: {
+                            slug: product.slug,
+                          },
+                        });
+
+                        toast.success("Product deleted successfully");
+
+                        await qc.invalidateQueries({
+                          queryKey: ["catalog"],
+                        });
+
+                        await qc.invalidateQueries({
+                          queryKey: ["admin-stats"],
+                        });
+                      } catch (error) {
+                        toast.error(
+                          error instanceof Error
+                            ? error.message
+                            : "Failed to delete product",
+                        );
+                      }
                     }}
                     className="rounded-full border border-border px-4 py-2 text-[11px] text-terracotta uppercase hover:border-terracotta"
                   >
