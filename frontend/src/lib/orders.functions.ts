@@ -139,8 +139,10 @@ export const createOrder = createServerFn({
         "Unable to save your order items. Please try again.",
       );
     }
-
-    return order;
+    return {
+  ...order,
+  items: lines,
+};
   });
 
 // =============================================

@@ -107,12 +107,13 @@ function Checkout() {
       const orderDelivery = Number(order.delivery_fee);
       const orderTotal = Number(order.total);
 
-      const itemsText = items
-        .map((item) => {
-          const lineTotal = item.qty * item.priceValue;
-          return `• ${item.name} × ${item.qty} = ₹${lineTotal}`;
-        })
-        .join("\n");
+      const itemsText = order.items
+  .map((item) => {
+    const lineTotal = item.qty * item.unit_price;
+
+    return `• ${item.name} × ${item.qty} = ₹${lineTotal}`;
+  })
+  .join("\n");
 
       const message = `*NEW ORDER - JANTA TEA* ☕
 
