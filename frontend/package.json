@@ -4,7 +4,7 @@
   "sideEffects": false,
   "type": "module",
   "scripts": {
-    "homepage": "https://github.com/chanchal-rathore25/janta_tea_website-",
+    "homepage": "https://github.com/chanchal-rathore25/janta_tea_website-/",
     "deploy": "gh-pages -d dist",
     "dev": "vite dev",
     "build": "vite build",
